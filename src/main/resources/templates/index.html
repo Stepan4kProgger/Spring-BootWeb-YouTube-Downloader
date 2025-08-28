@@ -132,20 +132,78 @@
 
                         <!-- Download Directory Input -->
                         <div class="mb-4">
-                            <label for="downloadDirectory" class="form-label fw-bold required-field">Путь для загрузки</label>
-                            <input type="text" class="form-control" id="downloadDirectory"
-                                   name="downloadDirectory"
-                                   placeholder="Введите полный путь к папке (например: C:\Downloads или /home/user/Downloads)"
-                                   required>
-                            <div class="form-text">
-                                <div class="path-examples">
-                                    <strong>Примеры путей:</strong><br>
-                                    Windows: <code>C:\Users\ВашеИмя\Downloads</code><br>
-                                    Linux/Mac: <code>/home/ВашеИмя/Downloads</code><br>
-                                    Относительный путь: <code>./downloads</code>
-                                </div>
+                            <label for="downloadDirectory" class="form-label fw-bold required-field">
+                                Путь для загрузки
+                            </label>
+                            <div class="input-group">
+                                <input type="text" class="form-control" id="downloadDirectory"
+                                       name="downloadDirectory" th:value="${selectedDirectory}"
+                                       placeholder="Выберите папку для загрузки" required>
+                                <button type="button" class="btn btn-outline-secondary"
+                                        onclick="openDirectoryBrowser()">
+                                    <i class="fas fa-folder-open me-1"></i>Обзор
+                                </button>
                             </div>
                         </div>
+                        <script>
+                            function openDirectoryBrowser() {
+                                try {
+                                    const currentDir = document.getElementById('downloadDirectory').value;
+                                    let url = '/yt-dlp/browse';
+
+                                    if (currentDir && currentDir.trim() !== '') {
+                                        // Кодируем путь для URL
+                                        const encodedDir = encodeURIComponent(currentDir);
+                                        url += '?path=' + encodedDir;
+                                    }
+
+                                    const browserWindow = window.open(url, 'directoryBrowser', 'width=900,height=700,resizable=yes,scrollbars=yes');
+
+                                    // Фокус на новом окне
+                                    if (browserWindow) {
+                                        browserWindow.focus();
+                                    }
+                                } catch (e) {
+                                    console.error('Error opening directory browser:', e);
+                                    alert('Ошибка при открытии браузера файлов');
+                                }
+                            }
+
+                            // Улучшенный обработчик сообщений
+                            window.addEventListener('message', function(event) {
+                                try {
+                                    if (event.data && event.data.type === 'directorySelected') {
+                                        const pathInput = document.getElementById('downloadDirectory') ||
+                                                         document.getElementById('directoryInput');
+                                        if (pathInput) {
+                                            pathInput.value = event.data.path;
+                                            if (typeof updateSubmitButton === 'function') updateSubmitButton();
+                                            if (typeof updateModalSubmitButton === 'function') updateModalSubmitButton();
+                                        }
+                                    }
+                                } catch (e) {
+                                    console.error('Error processing message:', e);
+                                }
+                            });
+
+                            // Автозаполнение текущей директории при загрузке
+                            document.addEventListener('DOMContentLoaded', function() {
+                                fetch('/yt-dlp/get-current-directory')
+                                    .then(response => {
+                                        if (!response.ok) throw new Error('Network response was not ok');
+                                        return response.text();
+                                    })
+                                    .then(directory => {
+                                        if (directory && directory !== 'null' && document.getElementById('downloadDirectory').value === '') {
+                                            document.getElementById('downloadDirectory').value = directory;
+                                            updateSubmitButton();
+                                        }
+                                    })
+                                    .catch(error => {
+                                        console.log('No saved directory found or error:', error);
+                                    });
+                            });
+                        </script>
 
                         <!-- Format Options -->
                         <div class="mb-4">

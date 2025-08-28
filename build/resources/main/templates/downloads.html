@@ -33,17 +33,21 @@
         content: " *";
         color: #dc3545;
     }
+    .current-directory {
+        background-color: #e7f3ff;
+        border-left: 4px solid #0d6efd;
+    }
   </style>
 </head>
 <body class="bg-light">
 <nav class="navbar navbar-expand-lg navbar-dark bg-danger">
   <div class="container">
-    <a class="navbar-brand" href="/">
+    <a class="navbar-brand" href="/yt-dlp/">
       <i class="fab fa-youtube me-2"></i>YT-DLP Downloader
     </a>
     <div class="navbar-nav">
-      <a class="nav-link" href="/">Главная</a>
-      <a class="nav-link active" href="/downloads">Загрузки</a>
+      <a class="nav-link" href="/yt-dlp/">Главная</a>
+      <a class="nav-link active" href="/yt-dlp/downloads">Загрузки</a>
     </div>
   </div>
 </nav>
@@ -75,7 +79,7 @@
           </div>
 
           <!-- Текущая директория -->
-          <div th:if="${currentDirectory != null and not currentDirectory.empty}" class="alert alert-info mb-4">
+          <div th:if="${currentDirectory != null and not currentDirectory.empty}" class="alert alert-info mb-4 current-directory">
             <div class="d-flex justify-content-between align-items-center">
               <div>
                 <i class="fas fa-info-circle me-2"></i>
@@ -93,10 +97,14 @@
           <div th:if="${error}" class="alert alert-danger mb-4">
             <i class="fas fa-exclamation-circle me-2"></i>
             <span th:text="${error}"></span>
+            <button type="button" class="btn btn-sm btn-outline-danger ms-2"
+                    data-bs-toggle="modal" data-bs-target="#directoryModal">
+              Выбрать другую папку
+            </button>
           </div>
 
           <!-- Таблица файлов -->
-          <div th:if="${currentDirectory != null and not currentDirectory.empty}" class="table-responsive">
+          <div th:if="${currentDirectory != null and not currentDirectory.empty and error == null}" class="table-responsive">
             <table class="table table-hover file-table">
               <thead class="table-light">
               <tr>
@@ -125,16 +133,16 @@
                 <td class="text-end file-size" th:text="${file.size}">1.2 MB</td>
                 <td class="file-date" th:text="${#temporals.format(#temporals.createDate(file.lastModified), 'dd.MM.yyyy HH:mm')}">01.01.2024 12:00</td>
                 <td class="text-center">
-                  <a th:href="@{'/downloads/file/' + ${file.name} + '?directory=' + ${currentDirectory}}"
+                  <a th:href="@{'/yt-dlp/downloads/file/' + ${file.name} + '?directory=' + ${currentDirectory}}"
                      class="btn btn-sm btn-outline-primary me-1"
                      title="Скачать файл">
                     <i class="fas fa-download"></i>
                   </a>
                   <button class="btn btn-sm btn-outline-info"
                           onclick="showFileInfo(this)"
-                          th:data-filename="${file.name}"
-                          th:data-filesize="${file.size}"
-                          th:data-filedate="${#temporals.format(#temporals.createDate(file.lastModified), 'dd.MM.yyyy HH:mm:ss')}"
+                          th:attr="data-filename=${file.name},
+                                  data-filesize=${file.size},
+                                  data-filedate=${#temporals.format(#temporals.createDate(file.lastModified), 'dd.MM.yyyy HH:mm:ss')}"
                           title="Информация о файле">
                     <i class="fas fa-info-circle"></i>
                   </button>
@@ -163,10 +171,16 @@
         <form id="directoryForm" th:action="@{/yt-dlp/downloads}" method="get">
           <div class="mb-3">
             <label for="directoryInput" class="form-label required-field">Путь к папке:</label>
-            <input type="text" class="form-control" id="directoryInput"
-                   name="directory"
-                   placeholder="Введите полный путь к папке (например: C:\Downloads или /home/user/Downloads)"
-                   th:value="${currentDirectory}" required>
+            <div class="input-group">
+              <input type="text" class="form-control" id="directoryInput"
+                     name="directory"
+                     placeholder="Введите полный путь к папке"
+                     th:value="${currentDirectory}" required>
+              <button type="button" class="btn btn-outline-secondary"
+                      onclick="openDirectoryBrowser()">
+                <i class="fas fa-folder-open me-1"></i>Обзор
+              </button>
+            </div>
             <div class="form-text">
               <div class="path-examples">
                 <strong>Примеры путей:</strong><br>
@@ -180,7 +194,7 @@
       </div>
       <div class="modal-footer">
         <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Отмена</button>
-        <button type="button" class="btn btn-primary" onclick="submitDirectoryForm()" id="modalSubmitButton" disabled>
+        <button type="button" class="btn btn-primary" onclick="submitDirectoryForm()" id="modalSubmitButton">
           <i class="fas fa-eye me-1"></i>Просмотреть
         </button>
       </div>
@@ -190,83 +204,74 @@
 
 <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.1.3/dist/js/bootstrap.bundle.min.js"></script>
 <script>
-  // Directory selection
-  document.getElementById('browseButton').addEventListener('click', function() {
-      document.getElementById('directoryPicker').click();
-  });
+  // Открытие браузера файлов
+  function openDirectoryBrowser() {
+    const currentDir = document.getElementById('directoryInput').value;
+    let url = '/yt-dlp/browse';
 
-  document.getElementById('directoryPicker').addEventListener('change', function(e) {
-      if (e.target.files.length > 0) {
-          // Получаем путь к выбранной директории
-          const path = e.target.files[0].webkitRelativePath;
-          const directory = path.split('/')[0];
+    if (currentDir) {
+      const encodedDir = encodeURIComponent(currentDir);
+      url += '?path=' + encodedDir;
+    }
 
-          // Сохраняем только имя папки
-          document.getElementById('downloadDirectory').value = directory;
-          document.getElementById('currentDirectory').textContent = directory;
-          document.getElementById('currentDirectorySection').style.display = 'block';
+    window.open(url, 'directoryBrowser', 'width=900,height=700,resizable=yes,scrollbars=yes');
+  }
 
-          // Активируем кнопку отправки
-          updateSubmitButton();
-      }
-  });
-
-  // Fallback for browsers that don't support directory selection
-  document.getElementById('downloadDirectory').addEventListener('click', function() {
-      if (!('webkitdirectory' in document.createElement('input'))) {
-          const path = prompt('Введите путь к директории для загрузки:');
-          if (path) {
-              this.value = path;
-              document.getElementById('currentDirectory').textContent = path;
-              document.getElementById('currentDirectorySection').style.display = 'block';
-              updateSubmitButton();
-          }
-      }
+  // Обработчик сообщений от браузера файлов
+  window.addEventListener('message', function(event) {
+    if (event.data && event.data.type === 'directorySelected') {
+      document.getElementById('directoryInput').value = event.data.path;
+      updateModalSubmitButton();
+    }
   });
 
   // Обновление состояния кнопки отправки
   function updateModalSubmitButton() {
-      const directory = document.getElementById('directoryInput').value;
-      const submitButton = document.getElementById('modalSubmitButton');
-      submitButton.disabled = !directory;
+    const directory = document.getElementById('directoryInput').value;
+    const submitButton = document.getElementById('modalSubmitButton');
+    submitButton.disabled = !directory;
   }
 
-  document.getElementById('directoryInput').addEventListener('input', updateModalSubmitButton);
-
+  // Отправка формы выбора директории
   function submitDirectoryForm() {
-      const directory = document.getElementById('directoryInput').value;
-      if (!directory) {
-          alert('Пожалуйста, выберите папку для просмотра');
-          return;
-      }
-      document.getElementById('directoryForm').submit();
+    const directory = document.getElementById('directoryInput').value;
+    if (!directory) {
+      alert('Пожалуйста, выберите папку для просмотра');
+      return;
+    }
+    document.getElementById('directoryForm').submit();
   }
 
+  // Показать информацию о файле
   function showFileInfo(button) {
-      const filename = button.getAttribute('data-filename');
-      const filesize = button.getAttribute('data-filesize');
-      const filedate = button.getAttribute('data-filedate');
+    const filename = button.getAttribute('data-filename');
+    const filesize = button.getAttribute('data-filesize');
+    const filedate = button.getAttribute('data-filedate');
 
-      alert(`Информация о файле:\n\nИмя: ${filename}\nРазмер: ${filesize}\nДата изменения: ${filedate}`);
+    alert(`Информация о файле:\n\nИмя: ${filename}\nРазмер: ${filesize}\nДата изменения: ${filedate}`);
   }
 
   // Автоматическое открытие модального окна если директория не выбрана
   document.addEventListener('DOMContentLoaded', function() {
-      const currentDirectory = document.querySelector('.directory-path');
-      if (!currentDirectory || !currentDirectory.textContent.trim()) {
-          const modal = new bootstrap.Modal(document.getElementById('directoryModal'));
-          modal.show();
-      }
+    const currentDirectory = '<span th:text="${currentDirectory}"/>';
+    if (!currentDirectory || currentDirectory.trim() === '') {
+      const modal = new bootstrap.Modal(document.getElementById('directoryModal'));
+      modal.show();
+    }
 
-      // Проверка поддержки выбора директории
-      if (!('webkitdirectory' in document.createElement('input'))) {
-          document.getElementById('browseButton').title = 'Выбор директории не поддерживается в вашем браузере';
-          document.getElementById('browseButton').disabled = true;
-          document.getElementById('directoryInput').readOnly = false;
-          document.getElementById('directoryInput').placeholder = 'Введите путь к папке';
-      }
+    // Обновление состояния кнопки при загрузке
+    updateModalSubmitButton();
 
-      updateModalSubmitButton();
+    // Обработка изменений в поле ввода
+    document.getElementById('directoryInput').addEventListener('input', updateModalSubmitButton);
+  });
+
+  // Обработка нажатия Enter в поле ввода
+  document.getElementById('directoryInput').addEventListener('keypress', function(e) {
+    if (e.key === 'Enter') {
+      e.preventDefault();
+      submitDirectoryForm();
+    }
   });
 </script>
 </body>
