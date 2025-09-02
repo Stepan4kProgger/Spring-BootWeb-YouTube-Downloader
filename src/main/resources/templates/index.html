@@ -47,7 +47,6 @@
             content: " *";
             color: #dc3545;
         }
-        /* Новые стили для навигации */
         .navbar-brand {
             font-weight: 600;
         }
@@ -67,56 +66,149 @@
             font-size: 0.875rem;
             color: #6c757d;
         }
+        .progress {
+            border-radius: 4px;
+        }
+        .progress-bar {
+            transition: width 0.5s ease;
+        }
+        .text-truncate {
+            max-width: 200px;
+        }
+        .downloads-panel {
+            max-height: 600px;
+            overflow-y: auto;
+        }
+
+        .version-loading {
+            color: #6c757d;
+            font-style: italic;
+        }
+
+        .version-error {
+            color: #dc3545;
+        }
+
+        .version-success {
+            color: #198754;
+        }
+
+        .download-item {
+            border-left: 3px solid #007bff;
+            padding-left: 15px;
+            margin-left: 0;
+            transition: all 0.3s ease;
+        }
+
+        .download-item.downloading {
+            border-left: 3px solid #ffc107;
+            background-color: #fffbf0;
+        }
+
+        .download-item.completed {
+            border-left: 2px solid #28a745;
+            background-color: #f8fff9;
+        }
+
+        .download-item.error {
+            border-left: 3px solid #dc3545;
+            background-color: #fff8f8;
+        }
+
+        .download-item:hover {
+            background-color: #e9ecef;
+            transform: translateX(2px);
+        }
+
+        .download-item.downloading:hover {
+            background-color: #ffeaa7;
+        }
+
+        .download-item.completed:hover {
+            background-color: #e8f5e8;
+        }
+
+        .download-item.error:hover {
+            background-color: #f5e8e8;
+        }
+
+        .file-action-hint {
+            font-size: 0.75rem;
+            color: #0d6efd;
+            margin-top: 5px;
+            display: block;
+        }
+
+        .notification {
+            position: fixed;
+            top: 20px;
+            right: 20px;
+            z-index: 10000;
+            min-width: 300px;
+            animation: slideIn 0.3s ease;
+        }
+
+        @keyframes slideIn {
+            from {
+                transform: translateX(100%);
+                opacity: 0;
+            }
+            to {
+                transform: translateX(0);
+                opacity: 1;
+            }
+        }
+
+        .notification-hidden {
+            animation: slideOut 0.3s ease;
+            opacity: 0;
+        }
+
+        @keyframes slideOut {
+            from {
+                transform: translateX(0);
+                opacity: 1;
+            }
+            to {
+                transform: translateX(100%);
+                opacity: 0;
+            }
+        }
     </style>
 </head>
 <body class="bg-light">
-<!-- Навигационная шапка -->
-<nav class="navbar navbar-expand-lg navbar-dark bg-danger">
-    <div class="container">
-        <a class="navbar-brand" href="/yt-dlp/">
-            <i class="fab fa-youtube me-2"></i>YT-DLP Downloader
-        </a>
-        <button class="navbar-toggler" type="button" data-bs-toggle="collapse" data-bs-target="#navbarNav">
-            <span class="navbar-toggler-icon"></span>
-        </button>
-        <div class="collapse navbar-collapse" id="navbarNav">
-            <div class="navbar-nav ms-auto">
-                <a class="nav-link active" href="/yt-dlp/">
-                    <i class="fas fa-home me-1"></i>Главная
-                </a>
-                <a class="nav-link" href="/yt-dlp/downloads">
-                    <i class="fas fa-download me-1"></i>Загрузки
-                </a>
-            </div>
-        </div>
-    </div>
-</nav>
 
 <div class="container py-5">
-    <div class="row justify-content-center">
-        <div class="col-lg-10">
-            <!-- Header -->
-            <div class="text-center mb-5">
-                <h1 class="display-4 text-danger mb-3">
-                    <i class="fab fa-youtube me-2"></i>YT-DLP Downloader
-                </h1>
-                <p class="lead text-muted">Скачивайте видео и аудио с различных платформ</p>
-                <small class="text-muted">Версия yt-dlp.exe: <span th:text="${version}">Unknown</span></small>
-            </div>
+    <!-- Header -->
+    <div class="text-center mb-5">
+        <h1 class="display-4 text-danger mb-3">
+            <i class="fab fa-youtube me-2"></i>YT-DLP Downloader
+        </h1>
+        <p class="lead text-muted">Скачивайте видео и аудио с различных платформ</p>
+        <small class="text-muted">Версия yt-dlp.exe:
+            <span id="versionText" class="version-loading" th:text="${version}">Загрузка...</span>
+            <span id="versionSpinner" class="ms-2">
+                <i class="fas fa-spinner fa-spin"></i>
+            </span>
+        </small>
+    </div>
 
-            <!-- Alerts -->
-            <div th:if="${successMessage}" class="alert alert-success alert-dismissible fade show" role="alert">
-                <i class="fas fa-check-circle me-2"></i>
-                <span th:text="${successMessage}"></span>
-                <button type="button" class="btn-close" data-bs-dismiss="alert"></button>
-            </div>
+    <!-- Alerts -->
+    <div th:if="${successMessage}" class="alert alert-success alert-dismissible fade show" role="alert">
+        <i class="fas fa-check-circle me-2"></i>
+        <span th:text="${successMessage}"></span>
+        <button type="button" class="btn-close" data-bs-dismiss="alert"></button>
+    </div>
 
-            <div th:if="${errorMessage}" class="alert alert-danger alert-dismissible fade show" role="alert">
-                <i class="fas fa-exclamation-circle me-2"></i>
-                <span th:text="${errorMessage}"></span>
-                <button type="button" class="btn-close" data-bs-dismiss="alert"></button>
-            </div>
+    <div th:if="${errorMessage}" class="alert alert-danger alert-dismissible fade show" role="alert">
+        <i class="fas fa-exclamation-circle me-2"></i>
+        <span th:text="${errorMessage}"></span>
+        <button type="button" class="btn-close" data-bs-dismiss="alert"></button>
+    </div>
 
+    <div class="row">
+        <!-- Основная форма -->
+        <div class="col-lg-8">
             <!-- Download Form -->
             <div class="card mb-4">
                 <div class="card-body p-4">
@@ -145,65 +237,6 @@
                                 </button>
                             </div>
                         </div>
-                        <script>
-                            function openDirectoryBrowser() {
-                                try {
-                                    const currentDir = document.getElementById('downloadDirectory').value;
-                                    let url = '/yt-dlp/browse';
-
-                                    if (currentDir && currentDir.trim() !== '') {
-                                        // Кодируем путь для URL
-                                        const encodedDir = encodeURIComponent(currentDir);
-                                        url += '?path=' + encodedDir;
-                                    }
-
-                                    const browserWindow = window.open(url, 'directoryBrowser', 'width=900,height=700,resizable=yes,scrollbars=yes');
-
-                                    // Фокус на новом окне
-                                    if (browserWindow) {
-                                        browserWindow.focus();
-                                    }
-                                } catch (e) {
-                                    console.error('Error opening directory browser:', e);
-                                    alert('Ошибка при открытии браузера файлов');
-                                }
-                            }
-
-                            // Улучшенный обработчик сообщений
-                            window.addEventListener('message', function(event) {
-                                try {
-                                    if (event.data && event.data.type === 'directorySelected') {
-                                        const pathInput = document.getElementById('downloadDirectory') ||
-                                                         document.getElementById('directoryInput');
-                                        if (pathInput) {
-                                            pathInput.value = event.data.path;
-                                            if (typeof updateSubmitButton === 'function') updateSubmitButton();
-                                            if (typeof updateModalSubmitButton === 'function') updateModalSubmitButton();
-                                        }
-                                    }
-                                } catch (e) {
-                                    console.error('Error processing message:', e);
-                                }
-                            });
-
-                            // Автозаполнение текущей директории при загрузке
-                            document.addEventListener('DOMContentLoaded', function() {
-                                fetch('/yt-dlp/get-current-directory')
-                                    .then(response => {
-                                        if (!response.ok) throw new Error('Network response was not ok');
-                                        return response.text();
-                                    })
-                                    .then(directory => {
-                                        if (directory && directory !== 'null' && document.getElementById('downloadDirectory').value === '') {
-                                            document.getElementById('downloadDirectory').value = directory;
-                                            updateSubmitButton();
-                                        }
-                                    })
-                                    .catch(error => {
-                                        console.log('No saved directory found or error:', error);
-                                    });
-                            });
-                        </script>
 
                         <!-- Format Options -->
                         <div class="mb-4">
@@ -211,8 +244,6 @@
                             <select class="form-select" id="format" name="format">
                                 <option value="best">Наилучшее качество</option>
                                 <option value="worst">Наихудшее качество</option>
-                                <option value="mp4">MP4</option>
-                                <option value="webm">WebM</option>
                             </select>
                         </div>
 
@@ -270,8 +301,31 @@
                         <li class="mb-2"><i class="fas fa-check text-success me-2"></i>Выберите формат и настройки</li>
                         <li class="mb-2"><i class="fas fa-check text-success me-2"></i>Нажмите Скачать</li>
                         <li class="mb-2"><i class="fas fa-check text-success me-2"></i>Файлы сохраняются в указанную папку</li>
-                        <li class="mb-2"><i class="fas fa-check text-success me-2"></i>Перейдите в раздел "Загрузки" для просмотра файлов</li>
+                        <li class="mb-2"><i class="fas fa-check text-success me-2"></i>Кликните на завершённую загрузку для открытия в проводнике</li>
                     </ul>
+                </div>
+            </div>
+        </div>
+
+        <!-- Объединённый раздел Загрузок -->
+        <div class="col-lg-4">
+            <div class="card downloads-panel">
+                <div class="card-header bg-primary text-white d-flex justify-content-between align-items-center">
+                    <h5 class="mb-0">
+                        <i class="fas fa-download me-2"></i>
+                        Загрузки
+                    </h5>
+                    <button class="btn btn-sm btn-outline-light" onclick="clearDownloads()" title="Очистить историю загрузок">
+                        <i class="fas fa-trash me-1"></i>Очистить
+                    </button>
+                </div>
+                <div class="card-body p-0">
+                    <div id="downloadsList" class="list-group list-group-flush">
+                        <div class="list-group-item text-center text-muted py-4">
+                            <i class="fas fa-cloud-download-alt fa-2x mb-2"></i>
+                            <p class="mb-0">Загрузка данных...</p>
+                        </div>
+                    </div>
                 </div>
             </div>
         </div>
@@ -280,6 +334,283 @@
 
 <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.1.3/dist/js/bootstrap.bundle.min.js"></script>
 <script>
+    // Функция для загрузки версии yt-dlp
+    function loadYtDlpVersion() {
+        const versionElement = document.getElementById('versionText');
+        const spinnerElement = document.getElementById('versionSpinner');
+
+        fetch('/yt-dlp/version')
+            .then(response => {
+                if (!response.ok) {
+                    throw new Error('Ошибка сети: ' + response.status);
+                }
+                return response.text();
+            })
+            .then(version => {
+                versionElement.textContent = version;
+                versionElement.classList.remove('version-loading');
+                versionElement.classList.add('version-success');
+
+                // Скрываем спиннер после успешной загрузки
+                if (spinnerElement) {
+                    spinnerElement.style.display = 'none';
+                }
+            })
+            .catch(error => {
+                console.error('Error loading version:', error);
+                versionElement.textContent = 'Ошибка загрузки версии';
+                versionElement.classList.remove('version-loading');
+                versionElement.classList.add('version-error');
+
+                // Скрываем спиннер при ошибке
+                if (spinnerElement) {
+                    spinnerElement.style.display = 'none';
+                }
+
+                // Пытаемся снова через 5 секунд
+                setTimeout(loadYtDlpVersion, 5000);
+            });
+    }
+
+    // Функция для открытия файла через сервер
+    function openFileInExplorer(filename, directory) {
+        console.log('Opening file:', filename, 'in directory:', directory);
+
+        if (!filename || filename === 'unknown' || !directory) {
+            alert('Недостаточно данных для открытия файла');
+            return;
+        }
+
+        const formData = new URLSearchParams();
+        formData.append('filename', filename);
+        formData.append('directory', directory);
+
+        fetch('/yt-dlp/downloads/open-explorer', {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/x-www-form-urlencoded',
+            },
+            body: formData
+        })
+        .then(response => {
+            if (!response.ok) {
+                return response.text().then(text => {
+                    console.error('Server error:', text);
+                    throw new Error(text);
+                });
+            }
+            return response.text();
+        })
+        .then(message => {
+            console.log('Проводник открыт:', message);
+            showNotification(message, 'success');
+        })
+        .catch(error => {
+            console.error('Ошибка открытия проводника:', error);
+            showNotification('Ошибка: ' + error.message, 'error');
+        });
+    }
+
+    // Функция для очистки всех загрузок
+    function clearDownloads() {
+        if (confirm('Вы уверены, что хотите очистить всю историю загрузок?')) {
+            fetch('/yt-dlp/clear-downloads', {
+                method: 'POST'
+            })
+            .then(response => {
+                if (response.ok) {
+                    showNotification('История загрузок очищена', 'success');
+                    updateDownloadsList();
+                } else {
+                    throw new Error('Ошибка очистки истории');
+                }
+            })
+            .catch(error => {
+                showNotification(error.message, 'error');
+            });
+        }
+    }
+
+    // Функция для обновления объединённого списка загрузок
+    function updateDownloadsList() {
+        fetch('/yt-dlp/downloads/all')
+            .then(response => {
+                if (!response.ok) throw new Error('Network response was not ok');
+                return response.json();
+            })
+            .then(downloads => {
+                const downloadsList = document.getElementById('downloadsList');
+
+                if (!downloads || downloads.length === 0) {
+                    downloadsList.innerHTML = `
+                        <div class="list-group-item text-center text-muted py-4">
+                            <i class="fas fa-cloud-download-alt fa-2x mb-2"></i>
+                            <p class="mb-0">Нет загрузок</p>
+                            <small class="text-muted">Начните загрузку видео, чтобы увидеть их здесь</small>
+                        </div>
+                    `;
+                    return;
+                }
+
+                let html = '';
+                downloads.forEach(download => {
+                    const filename = download.filename || download.url || 'Обработка...';
+                    const status = download.status || 'unknown';
+                    const progress = download.progress || 0;
+                    const directory = download.downloadDirectory || 'Не указан';
+                    const errorMessage = download.errorMessage || 'Ошибка';
+                    const endTime = download.endTime ? formatDateTime(download.endTime) : '';
+                    const startTime = download.startTime ? formatDateTime(download.startTime) : '';
+
+                    // Определяем классы в зависимости от статуса
+                    let itemClass = 'download-item';
+                    if (status === 'completed') {
+                        itemClass += ' completed';
+                    } else if (status === 'error') {
+                        itemClass += ' error';
+                    } else if (status === 'downloading') {
+                        itemClass += ' downloading';
+                    }
+
+                    // Добавляем обработчик клика для завершённых загрузок
+                    const clickable = status === 'completed' && filename !== 'unknown' && filename !== 'Обработка...' && directory && directory !== 'Не указан';
+                    const clickHandler = clickable ? `onclick="openFileInExplorer('${encodeURIComponent(filename)}', '${encodeURIComponent(directory)}')"` : '';
+                    const cursorStyle = clickable ? 'style="cursor: pointer;"' : '';
+
+                    html += `
+                        <div class="${itemClass}" ${cursorStyle} ${clickHandler}>
+                            <div class="d-flex justify-content-between align-items-start mb-2">
+                                <h6 class="mb-0 text-truncate" title="${filename}">${filename}</h6>
+                                <span class="badge ${getStatusBadgeClass(status)}">
+                                    ${status}
+                                </span>
+                            </div>
+
+                            ${renderProgressBar(status, progress, errorMessage)}
+
+                            <div class="d-flex justify-content-between align-items-center mt-2">
+                                <small class="text-muted">
+                                    <i class="fas fa-folder me-1"></i>
+                                    ${directory}
+                                </small>
+                                <small class="text-muted">
+                                    ${status === 'downloading' ?
+                                        `<i class="fas fa-play me-1"></i>${startTime}` :
+                                        `<i class="fas fa-check me-1"></i>${endTime}`
+                                    }
+                                </small>
+                            </div>
+
+                            ${clickable ? '<small class="file-action-hint"><i class="fas fa-mouse-pointer me-1"></i>Кликните для открытия в проводнике</small>' : ''}
+                        </div>
+                    `;
+                });
+                downloadsList.innerHTML = html;
+            })
+            .catch(error => {
+                console.error('Error updating downloads:', error);
+                const downloadsList = document.getElementById('downloadsList');
+                downloadsList.innerHTML = `
+                    <div class="list-group-item text-center text-muted py-4">
+                        <i class="fas fa-exclamation-triangle fa-2x mb-2 text-warning"></i>
+                        <p class="mb-0">Ошибка загрузки списка</p>
+                        <small class="text-muted">Попробуйте обновить страницу</small>
+                    </div>
+                `;
+            });
+    }
+
+    function renderProgressBar(status, progress, errorMessage) {
+        if (status === 'downloading') {
+            return `
+                <div class="progress mb-2 mt-2" style="height: 8px;">
+                    <div class="progress-bar progress-bar-striped progress-bar-animated"
+                         style="width: ${progress}%; background-color: #ffc107;">
+                    </div>
+                </div>
+                <small class="text-muted">${progress}%</small>
+            `;
+        } else if (status === 'completed') {
+            return `<div class="text-success mb-2 mt-2"><i class="fas fa-check-circle me-1"></i>Завершено</div>`;
+        } else if (status === 'error') {
+            return `<div class="text-danger mb-2 mt-2"><i class="fas fa-exclamation-circle me-1"></i>${errorMessage}</div>`;
+        }
+        return '';
+    }
+
+    function getStatusBadgeClass(status) {
+        switch(status) {
+            case 'downloading': return 'bg-warning';
+            case 'completed': return 'bg-success';
+            case 'error': return 'bg-danger';
+            default: return 'bg-secondary';
+        }
+    }
+
+    // Функция для форматирования даты
+    function formatDateTime(dateTimeStr) {
+        try {
+            const date = new Date(dateTimeStr);
+            return date.toLocaleString('ru-RU', {
+                day: '2-digit',
+                month: '2-digit',
+                year: 'numeric',
+                hour: '2-digit',
+                minute: '2-digit'
+            });
+        } catch (e) {
+            return dateTimeStr;
+        }
+    }
+
+    // Функция для показа уведомлений
+    function showNotification(message, type) {
+        // Удаляем предыдущие уведомления того же типа
+        const existingNotifications = document.querySelectorAll('.notification');
+        existingNotifications.forEach(notification => {
+            if (notification.textContent.includes(message)) {
+                notification.remove();
+            }
+        });
+
+        const notification = document.createElement('div');
+        notification.className = `alert alert-${type === 'success' ? 'success' : 'danger'} notification`;
+        notification.innerHTML = `
+            <div class="d-flex align-items-center">
+                <i class="fas ${type === 'success' ? 'fa-check-circle' : 'fa-exclamation-circle'} me-2"></i>
+                <span>${message}</span>
+                <button type="button" class="btn-close ms-auto" onclick="closeNotification(this)"></button>
+            </div>
+        `;
+
+        document.body.appendChild(notification);
+
+        // Автоматическое скрытие через 5 секунд
+        const timeoutId = setTimeout(() => {
+            closeNotification(notification.querySelector('.btn-close'));
+        }, 5000);
+
+        // Сохраняем ID таймера для возможности отмены
+        notification.dataset.timeoutId = timeoutId;
+    }
+
+    // Функция закрытия уведомления
+    function closeNotification(closeButton) {
+        const notification = closeButton.closest('.notification');
+        if (notification) {
+            // Отменяем таймер авто-закрытия
+            clearTimeout(notification.dataset.timeoutId);
+
+            // Анимация закрытия
+            notification.classList.add('notification-hidden');
+            setTimeout(() => {
+                if (notification.parentElement) {
+                    notification.remove();
+                }
+            }, 300);
+        }
+    }
+
     // Toggle audio options
     document.getElementById('extractAudio').addEventListener('change', function() {
         const audioOptions = document.getElementById('audioOptions');
@@ -323,6 +654,10 @@
         const audioOptions = document.getElementById('audioOptions');
         audioOptions.style.display = extractAudio.checked ? 'flex' : 'none';
         updateSubmitButton();
+
+        // Запускаем загрузку версии и списка загрузок
+        loadYtDlpVersion();
+        updateDownloadsList();
     });
 
     // Auto-hide alerts after 5 seconds
@@ -333,6 +668,61 @@
             bsAlert.close();
         });
     }, 5000);
+
+    // Обновляем каждые 3 секунды
+    setInterval(updateDownloadsList, 3000);
+
+    function openDirectoryBrowser() {
+        try {
+            const currentDir = document.getElementById('downloadDirectory').value;
+            let url = '/yt-dlp/browse';
+
+            if (currentDir && currentDir.trim() !== '') {
+                const encodedDir = encodeURIComponent(currentDir);
+                url += '?path=' + encodedDir;
+            }
+
+            const browserWindow = window.open(url, 'directoryBrowser', 'width=900,height=700,resizable=yes,scrollbars=yes');
+
+            if (browserWindow) {
+                browserWindow.focus();
+            }
+        } catch (e) {
+            console.error('Error opening directory browser:', e);
+            alert('Ошибка при открытии браузера файлов');
+        }
+    }
+
+    window.addEventListener('message', function(event) {
+        try {
+            if (event.data && event.data.type === 'directorySelected') {
+                const pathInput = document.getElementById('downloadDirectory');
+                if (pathInput) {
+                    pathInput.value = event.data.path;
+                    if (typeof updateSubmitButton === 'function') updateSubmitButton();
+                }
+            }
+        } catch (e) {
+            console.error('Error processing message:', e);
+        }
+    });
+
+    document.addEventListener('DOMContentLoaded', function() {
+        fetch('/yt-dlp/get-current-directory')
+            .then(response => {
+                if (!response.ok) throw new Error('Network response was not ok');
+                return response.text();
+            })
+            .then(directory => {
+                if (directory && directory !== 'null' && document.getElementById('downloadDirectory').value === '') {
+                    document.getElementById('downloadDirectory').value = directory;
+                    updateSubmitButton();
+                }
+            })
+            .catch(error => {
+                console.log('No saved directory found or error:', error);
+            });
+    });
 </script>
 </body>
 </html>
