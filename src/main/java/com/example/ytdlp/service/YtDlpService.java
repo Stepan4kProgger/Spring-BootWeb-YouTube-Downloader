@@ -345,47 +345,6 @@ public class YtDlpService {
         }
     }
 
-    // Метод для отслеживания прогресса
-    // Улучшенный метод trackDownloadProgress
-    private void trackDownloadProgress(Process process, String downloadId, DownloadProgress progress) {
-        try (BufferedReader reader = new BufferedReader(
-                new InputStreamReader(process.getInputStream()))) {
-            String line;
-            while ((line = reader.readLine()) != null) {
-                log.debug("yt-dlp: {}", line);
-
-                // Ищем строку с полным путём когда файл уже существует
-                if (line.contains("has already been downloaded") && line.contains("[download]")) {
-                    String filename = extractFilenameFromAlreadyDownloadedLine(line);
-                    if (!filename.equals("unknown")) {
-                        progress.setFilename(filename);
-                        log.info("Detected filename from 'already downloaded': {}", filename);
-                    }
-                }
-
-                if (line.contains("[download]")) {
-                    // Парсим прогресс из вывода yt-dlp
-                    int currentProgress = parseProgressFromLine(line);
-                    if (currentProgress > 0) {
-                        progress.setProgress(currentProgress);
-                        log.info("Download {}: {}%", downloadId, currentProgress);
-                    }
-
-                    // Извлекаем имя файла из строки Destination
-                    if (line.contains("Destination:")) {
-                        String filename = extractFilenameFromDestinationLine(line);
-                        if (!filename.equals("unknown")) {
-                            progress.setFilename(filename);
-                            log.info("Detected filename from Destination: {}", filename);
-                        }
-                    }
-                }
-            }
-        } catch (IOException e) {
-            log.error("Error tracking download progress: {}", e.getMessage());
-        }
-    }
-
     private List<String> buildCommand(DownloadRequest request, String ytDlpPath, String targetDirectory) {
         List<String> command = new ArrayList<>();
         command.add(ytDlpPath);
@@ -554,30 +513,6 @@ public class YtDlpService {
         } catch (Exception e) {
             log.error("Error parsing other line: {}", e.getMessage());
         }
-        return null;
-    }
-
-
-    private String extractFilenameFromLine(String line) {
-        // Пример: [download] Destination: filename.mp4
-        if (line.contains("Destination:")) {
-            String destinationPart = line.substring(line.indexOf("Destination:") + 12).trim();
-
-            // Удаляем кавычки если есть
-            if (destinationPart.startsWith("\"") && destinationPart.endsWith("\"")) {
-                destinationPart = destinationPart.substring(1, destinationPart.length() - 1);
-            }
-
-            return destinationPart;
-        }
-
-        // Пример: [download] 100% of   12.34MiB in 00:00:10 at 1.23MiB/s (filename)
-        java.util.regex.Matcher matcher = java.util.regex.Pattern.compile(
-                "\\(([^)]+\\.(mp4|mp3|webm|m4a|ogg|wav))\\)").matcher(line);
-        if (matcher.find()) {
-            return matcher.group(1);
-        }
-
         return null;
     }
 
@@ -755,19 +690,5 @@ public class YtDlpService {
             log.error("Failed to start explorer process: {}", e.getMessage());
             throw new IOException("Не удалось запустить проводник: " + e.getMessage());
         }
-    }
-
-    public void clearHistory() throws IOException {
-        downloadHistory.clear();
-        saveDownloadHistory();
-        log.info("Download history cleared");
-    }
-
-    @Data
-    @RequiredArgsConstructor
-    public static class FileInfo {
-        private final String name;
-        private final String size;
-        private final long lastModified;
     }
 }
