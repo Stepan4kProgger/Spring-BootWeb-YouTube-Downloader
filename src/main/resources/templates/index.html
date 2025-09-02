@@ -1,5 +1,5 @@
 <!DOCTYPE html>
-<html xmlns:th="http://www.thymeleaf.org">
+<html xmlns:th="http://www.thymeleaf.org" class="theme-light">
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
@@ -7,144 +7,153 @@
     <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.1.3/dist/css/bootstrap.min.css" rel="stylesheet">
     <link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css" rel="stylesheet">
     <style>
-        .card {
-            box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1);
-            border: none;
-            border-radius: 10px;
+        :root {
+            --bg-color: #f8f9fa;
+            --text-color: #212529;
+            --card-bg: #ffffff;
+            --border-color: #dee2e6;
+            --primary-color: #0d6efd;
+            --secondary-color: #6c757d;
+            --success-color: #198754;
+            --danger-color: #dc3545;
+            --warning-color: #ffc107;
         }
-        .btn-primary {
-            background: linear-gradient(45deg, #ff0000, #ff6b6b);
-            border: none;
-            border-radius: 25px;
-            padding: 12px 30px;
-            font-weight: 600;
+
+        .theme-dark {
+            --bg-color: #1a1d21;
+            --text-color: #e9ecef;
+            --card-bg: #2a2e33;
+            --border-color: #40464e;
+            --primary-color: #3b82f6;
+            --secondary-color: #94a3b8;
+            --success-color: #22c55e;
+            --danger-color: #ef4444;
+            --warning-color: #f59e0b;
         }
-        .btn-outline-secondary {
-            border-radius: 25px;
-        }
-        .btn-primary:hover {
-            background: linear-gradient(45deg, #cc0000, #ff5252);
-            transform: translateY(-2px);
-        }
-        .form-control:focus {
-            border-color: #ff6b6b;
-            box-shadow: 0 0 0 0.2rem rgba(255, 107, 107, 0.25);
-        }
-        .alert {
-            border-radius: 10px;
-            border: none;
-        }
-        .directory-path {
-            background-color: #f8f9fa;
-            border: 1px dashed #dee2e6;
-            border-radius: 5px;
-            padding: 10px;
-            font-family: monospace;
-            font-size: 14px;
-            min-height: 42px;
-        }
-        .required-field::after {
-            content: " *";
-            color: #dc3545;
-        }
-        .navbar-brand {
-            font-weight: 600;
-        }
-        .nav-link {
-            font-weight: 500;
-            padding: 0.5rem 1rem;
-            border-radius: 0.375rem;
-            transition: all 0.2s;
-        }
-        .nav-link:hover {
-            background-color: rgba(255, 255, 255, 0.1);
-        }
-        .nav-link.active {
-            background-color: rgba(255, 255, 255, 0.2);
-        }
-        .path-examples {
+
+        body {
+            background-color: var(--bg-color);
+            color: var(--text-color);
             font-size: 0.875rem;
-            color: #6c757d;
+            padding: 0.5rem;
+            transition: background-color 0.3s, color 0.3s;
         }
+
+        .card {
+            background-color: var(--card-bg);
+            border: 1px solid var(--border-color);
+            box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
+            margin-bottom: 0.75rem;
+        }
+
+        .card-header {
+            background-color: var(--card-bg);
+            border-bottom: 1px solid var(--border-color);
+            padding: 0.5rem 1rem;
+        }
+
+        .card-body {
+            padding: 1rem;
+        }
+
+        .form-control, .form-select {
+            background-color: var(--card-bg);
+            color: var(--text-color);
+            border: 1px solid var(--border-color);
+            font-size: 0.875rem;
+            padding: 0.375rem 0.75rem;
+        }
+
+        .form-control:focus, .form-select:focus {
+            background-color: var(--card-bg);
+            color: var(--text-color);
+            border-color: var(--primary-color);
+            box-shadow: 0 0 0 0.2rem rgba(13, 110, 253, 0.25);
+        }
+
+        .btn {
+            font-size: 0.875rem;
+            padding: 0.375rem 0.75rem;
+        }
+
+        .btn-primary {
+            background-color: var(--primary-color);
+            border-color: var(--primary-color);
+        }
+
+        .btn-group-compact .btn {
+            padding: 0.25rem 0.5rem;
+            font-size: 0.75rem;
+        }
+
+        .theme-switcher {
+            position: fixed;
+            top: 10px;
+            right: 10px;
+            z-index: 1000;
+        }
+
+        .compact-container {
+            max-width: 100%;
+            padding: 0;
+        }
+
+        .compact-row {
+            margin-left: -0.25rem;
+            margin-right: -0.25rem;
+        }
+
+        .compact-col {
+            padding-left: 0.25rem;
+            padding-right: 0.25rem;
+        }
+
+        .directory-path {
+            background-color: var(--card-bg);
+            border: 1px solid var(--border-color);
+            border-radius: 0.25rem;
+            padding: 0.375rem 0.75rem;
+            font-family: monospace;
+            font-size: 0.75rem;
+            min-height: 2rem;
+        }
+
         .progress {
-            border-radius: 4px;
+            height: 6px;
+            background-color: var(--bg-color);
+            margin: 0.5rem 0;
         }
-        .progress-bar {
-            transition: width 0.5s ease;
-        }
-        .text-truncate {
-            max-width: 200px;
-        }
+
         .downloads-panel {
-            max-height: 600px;
+            max-height: 500px;
             overflow-y: auto;
         }
 
-        .version-loading {
-            color: #6c757d;
-            font-style: italic;
-        }
-
-        .version-error {
-            color: #dc3545;
-        }
-
-        .version-success {
-            color: #198754;
-        }
-
         .download-item {
-            border-left: 3px solid #007bff;
-            padding-left: 15px;
-            margin-left: 0;
-            transition: all 0.3s ease;
+            border-left: 3px solid var(--primary-color);
+            padding: 0.5rem;
+            margin-bottom: 0.5rem;
+            transition: all 0.2s;
         }
 
         .download-item.downloading {
-            border-left: 3px solid #ffc107;
-            background-color: #fffbf0;
+            border-left-color: var(--warning-color);
         }
 
         .download-item.completed {
-            border-left: 2px solid #28a745;
-            background-color: #f8fff9;
+            border-left-color: var(--success-color);
         }
 
         .download-item.error {
-            border-left: 3px solid #dc3545;
-            background-color: #fff8f8;
-        }
-
-        .download-item:hover {
-            background-color: #e9ecef;
-            transform: translateX(2px);
-        }
-
-        .download-item.downloading:hover {
-            background-color: #ffeaa7;
-        }
-
-        .download-item.completed:hover {
-            background-color: #e8f5e8;
-        }
-
-        .download-item.error:hover {
-            background-color: #f5e8e8;
-        }
-
-        .file-action-hint {
-            font-size: 0.75rem;
-            color: #0d6efd;
-            margin-top: 5px;
-            display: block;
+            border-left-color: var(--danger-color);
         }
 
         .notification {
             position: fixed;
-            top: 20px;
-            right: 20px;
+            top: 10px;
+            right: 10px;
             z-index: 10000;
-            min-width: 300px;
+            min-width: 250px;
             animation: slideIn 0.3s ease;
         }
 
@@ -159,97 +168,126 @@
             }
         }
 
-        .notification-hidden {
-            animation: slideOut 0.3s ease;
-            opacity: 0;
+        .text-muted {
+            color: var(--secondary-color) !important;
         }
 
-        @keyframes slideOut {
-            from {
-                transform: translateX(0);
-                opacity: 1;
-            }
-            to {
-                transform: translateX(100%);
-                opacity: 0;
-            }
+        .badge {
+            font-size: 0.75em;
+            padding: 0.25em 0.5em;
+        }
+
+        .form-label {
+            margin-bottom: 0.25rem;
+            font-weight: 500;
+        }
+
+        .form-text {
+            font-size: 0.75rem;
+        }
+
+        h1, h2, h3, h4, h5, h6 {
+            margin-bottom: 0.5rem;
+        }
+
+        .display-4 {
+            font-size: 1.8rem;
+        }
+
+        .lead {
+            font-size: 0.9rem;
+        }
+
+        .required-field::after {
+            content: " *";
+            color: var(--danger-color);
         }
     </style>
 </head>
-<body class="bg-light">
+<body>
+<div class="theme-switcher">
+    <div class="btn-group btn-group-sm btn-group-compact">
+        <button class="btn btn-outline-secondary" onclick="setTheme('light')">
+            <i class="fas fa-sun"></i>
+        </button>
+        <button class="btn btn-outline-secondary" onclick="setTheme('dark')">
+            <i class="fas fa-moon"></i>
+        </button>
+        <button class="btn btn-outline-secondary" onclick="setTheme('auto')">
+            <i class="fas fa-desktop"></i>
+        </button>
+    </div>
+</div>
 
-<div class="container py-5">
+<div class="container compact-container py-2">
     <!-- Header -->
-    <div class="text-center mb-5">
-        <h1 class="display-4 text-danger mb-3">
-            <i class="fab fa-youtube me-2"></i>YT-DLP Downloader
+    <div class="text-center mb-3">
+        <h1 class="display-4 text-primary mb-1">
+            <i class="fab fa-youtube me-1"></i>YT-DLP Downloader
         </h1>
-        <p class="lead text-muted">Скачивайте видео и аудио с различных платформ</p>
+        <p class="lead text-muted mb-1">Скачивайте видео и аудио с различных платформ</p>
         <small class="text-muted">Версия yt-dlp.exe:
             <span id="versionText" class="version-loading" th:text="${version}">Загрузка...</span>
-            <span id="versionSpinner" class="ms-2">
-                <i class="fas fa-spinner fa-spin"></i>
-            </span>
         </small>
     </div>
 
     <!-- Alerts -->
-    <div th:if="${successMessage}" class="alert alert-success alert-dismissible fade show" role="alert">
-        <i class="fas fa-check-circle me-2"></i>
+    <div th:if="${successMessage}" class="alert alert-success alert-dismissible fade show mb-2" role="alert">
+        <i class="fas fa-check-circle me-1"></i>
         <span th:text="${successMessage}"></span>
         <button type="button" class="btn-close" data-bs-dismiss="alert"></button>
     </div>
 
-    <div th:if="${errorMessage}" class="alert alert-danger alert-dismissible fade show" role="alert">
-        <i class="fas fa-exclamation-circle me-2"></i>
+    <div th:if="${errorMessage}" class="alert alert-danger alert-dismissible fade show mb-2" role="alert">
+        <i class="fas fa-exclamation-circle me-1"></i>
         <span th:text="${errorMessage}"></span>
         <button type="button" class="btn-close" data-bs-dismiss="alert"></button>
     </div>
 
-    <div class="row">
+    <div class="row compact-row">
         <!-- Основная форма -->
-        <div class="col-lg-8">
+        <div class="col-lg-8 compact-col">
             <!-- Download Form -->
-            <div class="card mb-4">
-                <div class="card-body p-4">
+            <div class="card mb-2">
+                <div class="card-body p-2">
                     <form id="downloadForm" action="/yt-dlp/download" method="post">
                         <!-- URL Input -->
-                        <div class="mb-4">
+                        <div class="mb-2">
                             <label for="url" class="form-label fw-bold required-field">Ссылка на видео</label>
-                            <input type="url" class="form-control form-control-lg"
+                            <input type="url" class="form-control form-control-sm"
                                    id="url" name="url"
                                    placeholder="https://www.youtube.com/watch?v=..." required>
                             <div class="form-text">Поддерживаются: YouTube, Vimeo, Twitter и другие</div>
                         </div>
 
                         <!-- Download Directory Input -->
-                        <div class="mb-4">
+                        <div class="mb-2">
                             <label for="downloadDirectory" class="form-label fw-bold required-field">
                                 Путь для загрузки
                             </label>
-                            <div class="input-group">
+                            <div class="input-group input-group-sm">
                                 <input type="text" class="form-control" id="downloadDirectory"
                                        name="downloadDirectory" th:value="${selectedDirectory}"
                                        placeholder="Выберите папку для загрузки" required>
                                 <button type="button" class="btn btn-outline-secondary"
                                         onclick="openDirectoryBrowser()">
-                                    <i class="fas fa-folder-open me-1"></i>Обзор
+                                    <i class="fas fa-folder-open"></i>
                                 </button>
                             </div>
                         </div>
 
                         <!-- Format Options -->
-                        <div class="mb-4">
+                        <div class="mb-2">
                             <label for="format" class="form-label fw-bold">Формат</label>
-                            <select class="form-select" id="format" name="format">
+                            <select class="form-select form-select-sm" id="format" name="format">
                                 <option value="best">Наилучшее качество</option>
                                 <option value="worst">Наихудшее качество</option>
                             </select>
                         </div>
 
                         <!-- Audio Options -->
-                        <div class="mb-4">
-                            <div class="form-check form-switch mb-3">
+                        <div class="mb-2">
+                            <div class="form-check form-switch mb-1">
                                 <input class="form-check-input" type="checkbox"
                                        id="extractAudio" name="extractAudio" value="true">
                                 <label class="form-check-label fw-bold" for="extractAudio">
@@ -257,10 +295,10 @@
                                 </label>
                             </div>
 
-                            <div id="audioOptions" class="row ms-4" style="display: none;">
+                            <div id="audioOptions" class="row ms-3" style="display: none;">
                                 <div class="col-md-6">
                                     <label for="audioFormat" class="form-label">Формат аудио</label>
-                                    <select class="form-select" id="audioFormat" name="audioFormat">
+                                    <select class="form-select form-select-sm" id="audioFormat" name="audioFormat">
                                         <option value="mp3">MP3</option>
                                         <option value="m4a">M4A</option>
                                         <option value="wav">WAV</option>
@@ -269,7 +307,7 @@
                                 </div>
                                 <div class="col-md-6">
                                     <label for="quality" class="form-label">Качество (kbps)</label>
-                                    <select class="form-select" id="quality" name="quality">
+                                    <select class="form-select form-select-sm" id="quality" name="quality">
                                         <option value="128">128 kbps</option>
                                         <option value="192">192 kbps</option>
                                         <option value="256">256 kbps</option>
@@ -281,8 +319,8 @@
 
                         <!-- Submit Button -->
                         <div class="text-center">
-                            <button type="submit" class="btn btn-primary btn-lg" id="submitButton" disabled>
-                                <i class="fas fa-download me-2"></i>Скачать
+                            <button type="submit" class="btn btn-primary btn-sm" id="submitButton" disabled>
+                                <i class="fas fa-download me-1"></i>Скачать
                             </button>
                         </div>
                     </form>
@@ -291,38 +329,37 @@
 
             <!-- Instructions -->
             <div class="card">
-                <div class="card-body p-4">
-                    <h5 class="card-title mb-3">
-                        <i class="fas fa-info-circle me-2 text-primary"></i>Как использовать
+                <div class="card-body p-2">
+                    <h5 class="card-title mb-1">
+                        <i class="fas fa-info-circle me-1 text-primary"></i>Как использовать
                     </h5>
-                    <ul class="list-unstyled">
-                        <li class="mb-2"><i class="fas fa-check text-success me-2"></i>Вставьте ссылку на видео</li>
-                        <li class="mb-2"><i class="fas fa-check text-success me-2"></i>Введите полный путь к папке для загрузки</li>
-                        <li class="mb-2"><i class="fas fa-check text-success me-2"></i>Выберите формат и настройки</li>
-                        <li class="mb-2"><i class="fas fa-check text-success me-2"></i>Нажмите Скачать</li>
-                        <li class="mb-2"><i class="fas fa-check text-success me-2"></i>Файлы сохраняются в указанную папку</li>
-                        <li class="mb-2"><i class="fas fa-check text-success me-2"></i>Кликните на завершённую загрузку для открытия в проводнике</li>
+                    <ul class="list-unstyled mb-0">
+                        <li class="mb-1"><i class="fas fa-check text-success me-1"></i>Вставьте ссылку на видео</li>
+                        <li class="mb-1"><i class="fas fa-check text-success me-1"></i>Выберите папку для загрузки</li>
+                        <li class="mb-1"><i class="fas fa-check text-success me-1"></i>Выберите формат и настройки</li>
+                        <li class="mb-1"><i class="fas fa-check text-success me-1"></i>Нажмите Скачать</li>
+                        <li class="mb-1"><i class="fas fa-check text-success me-1"></i>Кликните на завершённую загрузку для открытия в проводнике</li>
                     </ul>
                 </div>
             </div>
         </div>
 
         <!-- Объединённый раздел Загрузок -->
-        <div class="col-lg-4">
+        <div class="col-lg-4 compact-col">
             <div class="card downloads-panel">
-                <div class="card-header bg-primary text-white d-flex justify-content-between align-items-center">
+                <div class="card-header bg-primary text-white d-flex justify-content-between align-items-center py-1">
                     <h5 class="mb-0">
-                        <i class="fas fa-download me-2"></i>
+                        <i class="fas fa-download me-1"></i>
                         Загрузки
                     </h5>
                     <button class="btn btn-sm btn-outline-light" onclick="clearDownloads()" title="Очистить историю загрузок">
-                        <i class="fas fa-trash me-1"></i>Очистить
+                        <i class="fas fa-trash"></i>
                     </button>
                 </div>
                 <div class="card-body p-0">
                     <div id="downloadsList" class="list-group list-group-flush">
-                        <div class="list-group-item text-center text-muted py-4">
-                            <i class="fas fa-cloud-download-alt fa-2x mb-2"></i>
+                        <div class="list-group-item text-center text-muted py-3">
+                            <i class="fas fa-cloud-download-alt fa-2x mb-1"></i>
                             <p class="mb-0">Загрузка данных...</p>
                         </div>
                     </div>
@@ -334,6 +371,36 @@
 
 <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.1.3/dist/js/bootstrap.bundle.min.js"></script>
 <script>
+    // Функция для установки темы
+    function setTheme(theme) {
+        if (theme === 'auto') {
+            if (window.matchMedia && window.matchMedia('(prefers-color-scheme: dark)').matches) {
+                document.documentElement.classList.add('theme-dark');
+                document.documentElement.classList.remove('theme-light');
+            } else {
+                document.documentElement.classList.add('theme-light');
+                document.documentElement.classList.remove('theme-dark');
+            }
+            localStorage.setItem('theme', 'auto');
+        } else {
+            document.documentElement.classList.remove('theme-light', 'theme-dark');
+            document.documentElement.classList.add(`theme-${theme}`);
+            localStorage.setItem('theme', theme);
+        }
+    }
+
+    // Загрузка сохраненной темы или использование системной
+    function loadTheme() {
+        const savedTheme = localStorage.getItem('theme');
+        if (savedTheme) {
+            setTheme(savedTheme);
+        } else if (window.matchMedia && window.matchMedia('(prefers-color-scheme: dark)').matches) {
+            setTheme('dark');
+        } else {
+            setTheme('light');
+        }
+    }
+
     // Функция для загрузки версии yt-dlp
     function loadYtDlpVersion() {
         const versionElement = document.getElementById('versionText');
@@ -708,6 +775,7 @@
     });
 
     document.addEventListener('DOMContentLoaded', function() {
+        loadTheme();
         fetch('/yt-dlp/get-current-directory')
             .then(response => {
                 if (!response.ok) throw new Error('Network response was not ok');
