@@ -4,6 +4,8 @@ import com.example.ytdlp.model.DownloadProgress;
 import com.example.ytdlp.model.DownloadRequest;
 import com.example.ytdlp.model.DownloadResponse;
 import com.example.ytdlp.config.ApplicationConfig;
+import com.fasterxml.jackson.core.type.TypeReference;
+import com.fasterxml.jackson.databind.DeserializationFeature;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.fasterxml.jackson.databind.SerializationFeature;
 import com.fasterxml.jackson.datatype.jsr310.JavaTimeModule;
@@ -26,6 +28,7 @@ import java.util.*;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
+import java.util.concurrent.TimeUnit;
 import java.util.stream.Collectors;
 
 @Slf4j
@@ -46,6 +49,7 @@ public class YtDlpService {
 
     private final Map<String, DownloadProgress> activeDownloads = new ConcurrentHashMap<>();
     private final List<DownloadProgress> downloadHistory = Collections.synchronizedList(new ArrayList<>());
+    private final Map<String, Process> activeProcesses = new ConcurrentHashMap<>();
     private final ExecutorService progressExecutor = Executors.newCachedThreadPool();
 
     @PostConstruct
@@ -58,33 +62,63 @@ public class YtDlpService {
         try {
             Path historyPath = Paths.get(HISTORY_FILE);
             if (Files.exists(historyPath)) {
-                List<String> lines = Files.readAllLines(historyPath);
+                ObjectMapper objectMapper = new ObjectMapper();
+                objectMapper.registerModule(new JavaTimeModule());
+                objectMapper.disable(DeserializationFeature.FAIL_ON_UNKNOWN_PROPERTIES);
+
+                List<DownloadProgress> loadedHistory = objectMapper.readValue(
+                        historyPath.toFile(),
+                        new TypeReference<List<DownloadProgress>>() {}
+                );
+
                 downloadHistory.clear();
+                downloadHistory.addAll(loadedHistory);
 
-                for (String line : lines) {
-                    if (!line.trim().isEmpty()) {
-                        String[] parts = line.split("\\|");
-                        if (parts.length >= 6) {
-                            DownloadProgress progress = new DownloadProgress();
-                            progress.setUrl(parts[0]);
-                            progress.setFilename(parts[1]);
-                            progress.setStatus(parts[2]);
-                            progress.setProgress(Integer.parseInt(parts[3]));
-                            progress.setStartTime(LocalDateTime.parse(parts[4]));
-                            progress.setEndTime(LocalDateTime.parse(parts[5]));
-                            progress.setDownloadDirectory(parts.length > 6 ? parts[6] : "");
-                            progress.setErrorMessage(parts.length > 7 ? parts[7] : "");
-
-                            downloadHistory.add(progress);
-                        }
-                    }
-                }
                 log.info("Loaded {} items from download history", downloadHistory.size());
             }
         } catch (IOException e) {
             log.error("Error loading download history", e);
+            // Создаем пустой файл при ошибке
+            saveDownloadHistory();
         } catch (Exception e) {
             log.error("Error parsing download history", e);
+            // Пытаемся восстановить из backup формата
+            try {
+                loadLegacyHistoryFormat();
+            } catch (Exception ex) {
+                log.error("Failed to load legacy format", ex);
+            }
+        }
+    }
+
+    // Метод для загрузки старого формата (если нужно)
+    private void loadLegacyHistoryFormat() throws IOException {
+        Path historyPath = Paths.get(HISTORY_FILE);
+        if (Files.exists(historyPath)) {
+            List<String> lines = Files.readAllLines(historyPath, StandardCharsets.UTF_8);
+            downloadHistory.clear();
+
+            for (String line : lines) {
+                if (!line.trim().isEmpty()) {
+                    String[] parts = line.split("\\|");
+                    if (parts.length >= 6) {
+                        DownloadProgress progress = new DownloadProgress();
+                        progress.setUrl(parts[0]);
+                        progress.setFilename(parts[1]);
+                        progress.setStatus(parts[2]);
+                        progress.setProgress(Integer.parseInt(parts[3]));
+                        progress.setStartTime(LocalDateTime.parse(parts[4]));
+                        progress.setEndTime(LocalDateTime.parse(parts[5]));
+                        progress.setDownloadDirectory(parts.length > 6 ? parts[6] : "");
+                        progress.setErrorMessage(parts.length > 7 ? parts[7] : "");
+
+                        downloadHistory.add(progress);
+                    }
+                }
+            }
+            log.info("Loaded {} items from legacy history format", downloadHistory.size());
+            // Сохраняем в новом формате
+            saveDownloadHistory();
         }
     }
 
@@ -95,18 +129,36 @@ public class YtDlpService {
             objectMapper.disable(SerializationFeature.WRITE_DATES_AS_TIMESTAMPS);
             objectMapper.enable(SerializationFeature.INDENT_OUTPUT);
 
-            String json = objectMapper.writeValueAsString(downloadHistory);
+            // Создаем копию без transient полей
+            List<DownloadProgress> historyForSave = downloadHistory.stream()
+                    .map(progress -> {
+                        DownloadProgress copy = new DownloadProgress();
+                        copy.setUrl(progress.getUrl());
+                        copy.setFilename(progress.getFilename());
+                        copy.setStatus(progress.getStatus());
+                        copy.setProgress(progress.getProgress());
+                        copy.setStartTime(progress.getStartTime());
+                        copy.setEndTime(progress.getEndTime());
+                        copy.setDownloadDirectory(progress.getDownloadDirectory());
+                        copy.setErrorMessage(progress.getErrorMessage());
+                        copy.setDownloadId(progress.getDownloadId());
+                        copy.setCancellable(progress.isCancellable());
+                        copy.setPausable(progress.isPausable());
+                        return copy;
+                    })
+                    .collect(Collectors.toList());
+
+            String json = objectMapper.writeValueAsString(historyForSave);
             Path historyPath = Paths.get(HISTORY_FILE);
-            Files.write(historyPath, json.getBytes());
+            Files.write(historyPath, json.getBytes(StandardCharsets.UTF_8));
 
             log.info("Saved {} items to download history file: {}",
-                    downloadHistory.size(), historyPath.toAbsolutePath());
+                    historyForSave.size(), historyPath.toAbsolutePath());
 
         } catch (IOException e) {
             log.error("Error saving download history to file: {}", e.getMessage(), e);
         }
     }
-
 
     // Метод для получения списка доступных дисков/папок
     public List<String> getAvailableDrives() {
@@ -176,10 +228,10 @@ public class YtDlpService {
         private Date lastModified;
     }
 
-
     public DownloadResponse downloadVideo(DownloadRequest request) {
         String downloadId = UUID.randomUUID().toString();
         DownloadProgress progress = new DownloadProgress();
+        progress.setDownloadId(downloadId);
         progress.setUrl(request.getUrl());
         progress.setStatus("downloading");
         progress.setProgress(0);
@@ -230,6 +282,9 @@ public class YtDlpService {
             processBuilder.directory(downloadDir.toFile()); // Устанавливаем рабочую директорию
 
             Process process = processBuilder.start();
+            progress.setProcess(process);
+            activeProcesses.put(downloadId, process);
+
             StringBuilder output = new StringBuilder();
 
             // Создаем отдельный поток для чтения вывода в реальном времени
@@ -328,7 +383,7 @@ public class YtDlpService {
             progress.setStatus("error");
             progress.setErrorMessage("Error: " + e.getMessage());
             progress.setEndTime(LocalDateTime.now());
-
+            activeProcesses.remove(downloadId);
             log.error("Error during download: {}", e.getMessage(), e);
 
             // Сохраняем в историю при ошибке
@@ -607,7 +662,6 @@ public class YtDlpService {
         log.info("Download history cleared");
     }
 
-
     public List<DownloadProgress> getDownloadHistory() {
         // Исключаем активные загрузки из истории
         Set<String> activeUrls = getActiveDownloads().stream()
@@ -626,6 +680,199 @@ public class YtDlpService {
                     return bTime.compareTo(aTime); // новые выше старых
                 })
                 .collect(Collectors.toList());
+    }
+
+    // Обновим методы pause/cancel для удаления процессов
+    public boolean pauseDownload(String downloadId) {
+        DownloadProgress progress = activeDownloads.get(downloadId);
+        if (progress != null && progress.getProcess() != null &&
+                "downloading".equals(progress.getStatus())) {
+            try {
+                Process process = progress.getProcess();
+                if (process.isAlive()) {
+                    process.destroy();
+                    progress.setStatus("paused");
+                    progress.setPausable(false);
+
+                    // Удаляем из активных процессов
+                    activeProcesses.remove(downloadId);
+
+                    log.info("Download paused: {}", downloadId);
+                    return true;
+                }
+            } catch (Exception e) {
+                log.error("Error pausing download: {}", e.getMessage());
+            }
+        }
+        return false;
+    }
+
+    public boolean resumeDownload(String downloadId) {
+        DownloadProgress progress = activeDownloads.get(downloadId);
+        if (progress != null && "paused".equals(progress.getStatus())) {
+            try {
+                // Перезапускаем загрузку с того же URL
+                DownloadRequest request = new DownloadRequest();
+                request.setUrl(progress.getUrl());
+                request.setDownloadDirectory(progress.getDownloadDirectory());
+
+                // Запускаем новую загрузку
+                downloadVideo(request);
+                log.info("Download resumed: {}", downloadId);
+                return true;
+            } catch (Exception e) {
+                log.error("Error resuming download: {}", e.getMessage());
+                return false;
+            }
+        }
+        return false;
+    }
+
+    public boolean cancelDownload(String downloadId) {
+        DownloadProgress progress = activeDownloads.get(downloadId);
+        if (progress != null && progress.getProcess() != null &&
+                ("downloading".equals(progress.getStatus()) || "paused".equals(progress.getStatus()))) {
+            try {
+                Process process = progress.getProcess();
+                if (process.isAlive()) {
+                    process.destroyForcibly();
+                }
+                progress.setStatus("cancelled");
+                progress.setCancellable(false);
+                progress.setPausable(false);
+                progress.setEndTime(LocalDateTime.now());
+
+                // Удаляем из активных процессов
+                activeProcesses.remove(downloadId);
+
+                // Сохраняем в историю
+                downloadHistory.add(progress);
+                saveDownloadHistory();
+
+                // Удаляем из активных загрузок
+                activeDownloads.remove(downloadId);
+
+                log.info("Download cancelled: {}", downloadId);
+                return true;
+            } catch (Exception e) {
+                log.error("Error cancelling download: {}", e.getMessage());
+            }
+        }
+        return false;
+    }
+
+    public Map<String, String> getActiveProcessesInfo() {
+        Map<String, String> info = new HashMap<>();
+        for (Map.Entry<String, Process> entry : activeProcesses.entrySet()) {
+            Process process = entry.getValue();
+            info.put(entry.getKey(),
+                    process != null ?
+                            "Alive: " + process.isAlive() :
+                            "Null process");
+        }
+        return info;
+    }
+
+    public boolean deleteDownloadedFile(String downloadId) {
+        DownloadProgress progress = null;
+
+        // Ищем в активных загрузках
+        progress = activeDownloads.get(downloadId);
+        if (progress == null) {
+            // Ищем в истории
+            progress = downloadHistory.stream()
+                    .filter(p -> downloadId.equals(p.getDownloadId()))
+                    .findFirst()
+                    .orElse(null);
+        }
+
+        if (progress != null && "completed".equals(progress.getStatus())) {
+            try {
+                Path filePath = Paths.get(progress.getDownloadDirectory(), progress.getFilename());
+                Files.deleteIfExists(filePath);
+
+                // Удаляем из истории
+                downloadHistory.removeIf(p -> downloadId.equals(p.getDownloadId()));
+                saveDownloadHistory();
+
+                log.info("File deleted: {}", filePath);
+                return true;
+            } catch (IOException e) {
+                log.error("Error deleting file: {}", e.getMessage());
+                return false;
+            }
+        }
+        return false;
+    }
+
+    public void stopAllDownloads() {
+        log.info("Stopping all active downloads...");
+
+        // 1. Останавливаем все процессы yt-dlp
+        stopAllProcesses();
+
+        // 2. Обновляем статусы всех активных загрузок
+        updateActiveDownloadsStatus();
+
+        // 3. Сохраняем историю
+        saveDownloadHistory();
+
+        log.info("All downloads stopped successfully");
+    }
+
+    private void stopAllProcesses() {
+        int stoppedCount = 0;
+        for (Map.Entry<String, Process> entry : activeProcesses.entrySet()) {
+            String downloadId = entry.getKey();
+            Process process = entry.getValue();
+
+            try {
+                if (process != null && process.isAlive()) {
+                    log.info("Stopping process for download: {}", downloadId);
+
+                    // Принудительное уничтожение процесса
+                    process.destroy();
+
+                    // Ждем завершения
+                    if (process.waitFor(3, TimeUnit.SECONDS)) {
+                        log.info("Process stopped gracefully: {}", downloadId);
+                    } else {
+                        // Принудительно убиваем процесс
+                        process.destroyForcibly();
+                        log.warn("Process force destroyed: {}", downloadId);
+                    }
+                    stoppedCount++;
+                }
+            } catch (Exception e) {
+                log.error("Error stopping process for download {}: {}", downloadId, e.getMessage());
+                try {
+                    // Последняя попытка убить процесс
+                    if (process != null) {
+                        process.destroyForcibly();
+                    }
+                } catch (Exception ex) {
+                    log.error("Failed to force destroy process: {}", ex.getMessage());
+                }
+            }
+        }
+        activeProcesses.clear();
+        log.info("Stopped {} processes", stoppedCount);
+    }
+
+    private void updateActiveDownloadsStatus() {
+        for (DownloadProgress progress : activeDownloads.values()) {
+            if ("downloading".equals(progress.getStatus()) || "paused".equals(progress.getStatus())) {
+                progress.setStatus("cancelled");
+                progress.setCancellable(false);
+                progress.setPausable(false);
+                progress.setEndTime(LocalDateTime.now());
+                progress.setErrorMessage("Загрузка прервана при завершении приложения");
+
+                // Добавляем в историю
+                downloadHistory.add(progress);
+            }
+        }
+        activeDownloads.clear();
     }
 
     // Метод для открытия проводника с файлом

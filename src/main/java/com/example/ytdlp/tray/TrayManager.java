@@ -1,5 +1,6 @@
 package com.example.ytdlp.tray;
 
+import com.example.ytdlp.service.YtDlpService;
 import jakarta.annotation.PostConstruct;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -7,12 +8,16 @@ import org.springframework.boot.SpringApplication;
 import org.springframework.context.ApplicationContext;
 import org.springframework.stereotype.Component;
 
+import javax.swing.*;
 import java.awt.*;
 import java.net.URI;
 
 @Slf4j
 @Component
 public class TrayManager {
+
+    @Autowired
+    private YtDlpService ytDlpService;
 
     @Autowired
     private ApplicationContext context;
@@ -130,11 +135,61 @@ public class TrayManager {
 
     private void shutdown() {
         try {
-            removeTrayIcon();
-            SpringApplication.exit(context, () -> 0);
-            System.exit(0);
+            // Создаем диалоговое окно подтверждения
+            int result = JOptionPane.showConfirmDialog(
+                    null,
+                    "Вы уверены, что хотите закрыть приложение?\nВсе активные загрузки будут остановлены.",
+                    "Подтверждение закрытия",
+                    JOptionPane.YES_NO_OPTION,
+                    JOptionPane.QUESTION_MESSAGE
+            );
+
+            if (result == JOptionPane.YES_OPTION) {
+                // Показываем уведомление о начале завершения
+                if (trayIcon != null) {
+                    trayIcon.displayMessage(
+                            "YT-DLP Downloader",
+                            "Завершение работы... Останавливаем загрузки",
+                            TrayIcon.MessageType.INFO
+                    );
+                }
+
+                // 1. Останавливаем все активные загрузки
+                log.info("Initiating graceful shutdown...");
+                ytDlpService.stopAllDownloads();
+
+                // 2. Даем время для завершения операций
+                Thread.sleep(1000);
+
+                // 3. Удаляем иконку из трея
+                removeTrayIcon();
+
+                // 4. Завершаем Spring приложение
+                int exitCode = SpringApplication.exit(context, () -> {
+                    log.info("Spring application exited gracefully");
+                    return 0;
+                });
+
+                // 5. Принудительно завершаем JVM
+                log.info("Shutdown completed with code: {}", exitCode);
+                System.exit(exitCode);
+            }
         } catch (Exception e) {
             log.error("Error during shutdown", e);
+
+            // Все равно пытаемся завершиться
+            try {
+                if (trayIcon != null) {
+                    trayIcon.displayMessage(
+                            "YT-DLP Downloader",
+                            "Ошибка при завершении: " + e.getMessage(),
+                            TrayIcon.MessageType.ERROR
+                    );
+                }
+            } catch (Exception ex) {
+                log.error("Error showing shutdown error message", ex);
+            }
+
             System.exit(1);
         }
     }

@@ -23,6 +23,7 @@ import java.time.LocalDateTime;
 import java.util.*;
 import java.net.URLDecoder;
 import java.nio.charset.StandardCharsets;
+import java.util.stream.Collectors;
 
 @Slf4j
 @Controller
@@ -119,45 +120,122 @@ public class WebController {
     @ResponseBody
     public List<DownloadProgress> getAllDownloads() {
         List<DownloadProgress> allDownloads = new ArrayList<>();
-        List<DownloadProgress> activeDownloads = ytDlpService.getActiveDownloads();
-        List<DownloadProgress> historyDownloads = ytDlpService.getDownloadHistory();
 
-        // Сначала добавляем активные загрузки
-        allDownloads.addAll(activeDownloads);
-        // Затем добавляем историю
-        allDownloads.addAll(historyDownloads);
+        // Добавляем активные загрузки (без process)
+        allDownloads.addAll(ytDlpService.getActiveDownloads().stream()
+                .map(this::createSerializableCopy)
+                .toList());
 
-        // Сортируем: активные загрузки сначала, затем по дате
+        // Добавляем историю
+        allDownloads.addAll(ytDlpService.getDownloadHistory().stream()
+                .map(this::createSerializableCopy)
+                .toList());
+
+        // Сортируем: активные сначала, затем по дате
         allDownloads.sort((a, b) -> {
-            // Проверяем, является ли загрузка активной
-            boolean aIsActive = a.getStatus() != null && a.getStatus().equals("downloading");
-            boolean bIsActive = b.getStatus() != null && b.getStatus().equals("downloading");
+            boolean aIsActive = a.getStatus() != null &&
+                    (a.getStatus().equals("downloading") || a.getStatus().equals("paused"));
+            boolean bIsActive = b.getStatus() != null &&
+                    (b.getStatus().equals("downloading") || b.getStatus().equals("paused"));
 
-            // Активные загрузки всегда выше завершенных/ошибок
-            if (aIsActive && !bIsActive) {
-                return -1; // a идет перед b
-            } else if (!aIsActive && bIsActive) {
-                return 1; // b идет перед a
-            } else if (aIsActive && bIsActive) {
-                // Если обе активные - сортируем по времени начала (новые выше)
-                LocalDateTime aTime = a.getStartTime();
-                LocalDateTime bTime = b.getStartTime();
+            if (aIsActive && !bIsActive) return -1;
+            if (!aIsActive && bIsActive) return 1;
 
-                if (aTime == null) return 1;
-                if (bTime == null) return -1;
-                return bTime.compareTo(aTime); // новые выше старых
-            } else {
-                // Если обе не активные - сортируем по времени окончания
-                LocalDateTime aTime = a.getEndTime() != null ? a.getEndTime() : a.getStartTime();
-                LocalDateTime bTime = b.getEndTime() != null ? b.getEndTime() : b.getStartTime();
+            LocalDateTime aTime = a.getEndTime() != null ? a.getEndTime() : a.getStartTime();
+            LocalDateTime bTime = b.getEndTime() != null ? b.getEndTime() : b.getStartTime();
 
-                if (aTime == null) return 1;
-                if (bTime == null) return -1;
-                return bTime.compareTo(aTime); // новые выше старых
-            }
+            if (aTime == null) return 1;
+            if (bTime == null) return -1;
+            return bTime.compareTo(aTime);
         });
 
         return allDownloads;
+    }
+
+    // Вспомогательный метод для создания сериализуемой копии
+    private DownloadProgress createSerializableCopy(DownloadProgress original) {
+        DownloadProgress copy = new DownloadProgress();
+        copy.setUrl(original.getUrl());
+        copy.setFilename(original.getFilename());
+        copy.setStatus(original.getStatus());
+        copy.setProgress(original.getProgress());
+        copy.setStartTime(original.getStartTime());
+        copy.setEndTime(original.getEndTime());
+        copy.setDownloadDirectory(original.getDownloadDirectory());
+        copy.setErrorMessage(original.getErrorMessage());
+        copy.setDownloadId(original.getDownloadId());
+        copy.setCancellable(original.isCancellable());
+        copy.setPausable(original.isPausable());
+        return copy;
+    }
+
+    @PostMapping("/downloads/pause")
+    @ResponseBody
+    public ResponseEntity<String> pauseDownload(@RequestParam String downloadId) {
+        try {
+            boolean success = ytDlpService.pauseDownload(downloadId);
+            if (success) {
+                return ResponseEntity.ok("Загрузка приостановлена");
+            } else {
+                return ResponseEntity.status(HttpStatus.BAD_REQUEST)
+                        .body("Не удалось приостановить загрузку или загрузка уже завершена");
+            }
+        } catch (Exception e) {
+            log.error("Error pausing download: {}", e.getMessage(), e);
+            return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR)
+                    .body("Ошибка приостановки: " + e.getMessage());
+        }
+    }
+
+    @PostMapping("/downloads/resume")
+    @ResponseBody
+    public ResponseEntity<String> resumeDownload(@RequestParam String downloadId) {
+        try {
+            boolean success = ytDlpService.resumeDownload(downloadId);
+            if (success) {
+                return ResponseEntity.ok("Загрузка возобновлена");
+            } else {
+                return ResponseEntity.status(HttpStatus.BAD_REQUEST)
+                        .body("Не удалось возобновить загрузку");
+            }
+        } catch (Exception e) {
+            return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR)
+                    .body("Ошибка возобновления: " + e.getMessage());
+        }
+    }
+
+    @PostMapping("/downloads/cancel")
+    @ResponseBody
+    public ResponseEntity<String> cancelDownload(@RequestParam String downloadId) {
+        try {
+            boolean success = ytDlpService.cancelDownload(downloadId);
+            if (success) {
+                return ResponseEntity.ok("Загрузка отменена");
+            } else {
+                return ResponseEntity.status(HttpStatus.BAD_REQUEST)
+                        .body("Не удалось отменить загрузку");
+            }
+        } catch (Exception e) {
+            return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR)
+                    .body("Ошибка отмены: " + e.getMessage());
+        }
+    }
+
+    @PostMapping("/downloads/delete")
+    @ResponseBody
+    public ResponseEntity<String> deleteDownload(@RequestParam String downloadId) {
+        try {
+            boolean success = ytDlpService.deleteDownloadedFile(downloadId);
+            if (success) {
+                return ResponseEntity.ok("Файл удален");
+            } else {
+                return ResponseEntity.status(HttpStatus.BAD_REQUEST)
+                        .body("Не удалось удалить файл");
+            }
+        } catch (Exception e) {
+            return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR)
+                    .body("Ошибка удаления: " + e.getMessage());
+        }
     }
 
     @PostMapping("/clear-downloads")
@@ -256,6 +334,24 @@ public class WebController {
             log.error("Unexpected error opening file in explorer: {}", e.getMessage(), e);
             return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR)
                     .body("Неожиданная ошибка: " + e.getMessage());
+        }
+    }
+
+    @GetMapping("/processes/info")
+    @ResponseBody
+    public Map<String, String> getProcessesInfo() {
+        return ytDlpService.getActiveProcessesInfo();
+    }
+
+    @PostMapping("/shutdown")
+    @ResponseBody
+    public ResponseEntity<String> gracefulShutdown() {
+        try {
+            ytDlpService.stopAllDownloads();
+            return ResponseEntity.ok("All downloads stopped. Application can be safely closed.");
+        } catch (Exception e) {
+            return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR)
+                    .body("Error during shutdown: " + e.getMessage());
         }
     }
 }

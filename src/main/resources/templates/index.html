@@ -18,6 +18,7 @@
             --success-color: #198754;
             --danger-color: #dc3545;
             --warning-color: #ffc107;
+            --info-color: #0dcaf0;
         }
 
         .theme-dark {
@@ -30,6 +31,7 @@
             --success-color: #22c55e;
             --danger-color: #ef4444;
             --warning-color: #f59e0b;
+            --info-color: #06b6d4;
         }
 
         body {
@@ -161,6 +163,22 @@
         .download-item.error {
             border-left-color: var(--danger-color);
         }
+
+        .download-item.paused {
+            border-left-color: var(--info-color);
+            background-color: rgba(23, 162, 184, 0.03);
+        }
+
+        .download-item.cancelled {
+            border-left-color: var(--secondary-color);
+            background-color: rgba(108, 117, 125, 0.03);
+        }
+
+        .btn-group-compact .btn {
+            padding: 0.2rem 0.4rem;
+            font-size: 0.7rem;
+        }
+
 
         .notification {
             position: fixed;
@@ -546,10 +564,7 @@
     // Функция для обновления объединённого списка загрузок
     function updateDownloadsList() {
         fetch('/yt-dlp/downloads/all')
-            .then(response => {
-                if (!response.ok) throw new Error('Network response was not ok');
-                return response.json();
-            })
+            .then(response => response.json())
             .then(downloads => {
                 const downloadsList = document.getElementById('downloadsList');
 
@@ -558,7 +573,6 @@
                         <div class="list-group-item text-center text-muted py-4">
                             <i class="fas fa-cloud-download-alt fa-2x mb-2"></i>
                             <p class="mb-0">Нет загрузок</p>
-                            <small class="text-muted">Начните загрузку видео, чтобы увидеть их здесь</small>
                         </div>
                     `;
                     return;
@@ -570,22 +584,21 @@
                     const status = download.status || 'unknown';
                     const progress = download.progress || 0;
                     const directory = download.downloadDirectory || 'Не указан';
-                    const errorMessage = download.errorMessage || 'Ошибка';
+                    const errorMessage = download.errorMessage || '';
+                    const downloadId = download.downloadId || '';
+                    const cancellable = download.cancellable !== false;
+                    const pausable = download.pausable !== false;
                     const endTime = download.endTime ? formatDateTime(download.endTime) : '';
                     const startTime = download.startTime ? formatDateTime(download.startTime) : '';
 
-                    // Определяем классы в зависимости от статуса
                     let itemClass = 'download-item';
-                    if (status === 'completed') {
-                        itemClass += ' completed';
-                    } else if (status === 'error') {
-                        itemClass += ' error';
-                    } else if (status === 'downloading') {
-                        itemClass += ' downloading';
-                    }
+                    if (status === 'completed') itemClass += ' completed';
+                    else if (status === 'error') itemClass += ' error';
+                    else if (status === 'downloading') itemClass += ' downloading';
+                    else if (status === 'paused') itemClass += ' paused';
+                    else if (status === 'cancelled') itemClass += ' cancelled';
 
-                    // Добавляем обработчик клика для завершённых загрузок
-                    const clickable = status === 'completed' && filename !== 'unknown' && filename !== 'Обработка...' && directory && directory !== 'Не указан';
+                    const clickable = status === 'completed' && filename !== 'unknown';
                     const clickHandler = clickable ? `onclick="openFileInExplorer('${encodeURIComponent(filename)}', '${encodeURIComponent(directory)}')"` : '';
                     const cursorStyle = clickable ? 'style="cursor: pointer;"' : '';
 
@@ -600,20 +613,60 @@
 
                             ${renderProgressBar(status, progress, errorMessage)}
 
-                            <div class="d-flex justify-content-between align-items-center mt-2">
+                            <!-- Кнопки управления - справа от прогресса -->
+                            <div class="d-flex justify-content-end gap-1 mb-2">
+                                ${status === 'downloading' && pausable ? `
+                                    <button class="btn btn-sm btn-outline-warning"
+                                            onclick="pauseDownload('${downloadId}')"
+                                            title="Приостановить">
+                                        <i class="fas fa-pause"></i>
+                                    </button>
+                                ` : ''}
+
+                                ${status === 'paused' ? `
+                                    <button class="btn btn-sm btn-outline-success"
+                                            onclick="resumeDownload('${downloadId}')"
+                                            title="Возобновить">
+                                        <i class="fas fa-play"></i>
+                                    </button>
+                                ` : ''}
+
+                                ${(status === 'downloading' || status === 'paused') && cancellable ? `
+                                    <button class="btn btn-sm btn-outline-danger"
+                                            onclick="cancelDownload('${downloadId}')"
+                                            title="Отменить">
+                                        <i class="fas fa-times"></i>
+                                    </button>
+                                ` : ''}
+
+                                ${status === 'completed' ? `
+                                    <button class="btn btn-sm btn-outline-danger"
+                                            onclick="deleteDownload('${downloadId}')"
+                                            title="Удалить файл">
+                                        <i class="fas fa-trash"></i>
+                                    </button>
+                                ` : ''}
+
+                                ${status === 'error' || status === 'cancelled' ? `
+                                    <button class="btn btn-sm btn-outline-danger"
+                                            onclick="deleteDownload('${downloadId}')"
+                                            title="Удалить из истории">
+                                        <i class="fas fa-trash"></i>
+                                    </button>
+                                ` : ''}
+                            </div>
+
+                            <div class="d-flex justify-content-between align-items-center">
                                 <small class="text-muted">
-                                    <i class="fas fa-folder me-1"></i>
-                                    ${directory}
+                                    <i class="fas fa-folder me-1"></i>${directory}
                                 </small>
                                 <small class="text-muted">
-                                    ${status === 'downloading' ?
+                                    ${status === 'downloading' || status === 'paused' ?
                                         `<i class="fas fa-play me-1"></i>${startTime}` :
                                         `<i class="fas fa-check me-1"></i>${endTime}`
                                     }
                                 </small>
                             </div>
-
-                            ${clickable ? '<small class="file-action-hint"><i class="fas fa-mouse-pointer me-1"></i>Кликните для открытия в проводнике</small>' : ''}
                         </div>
                     `;
                 });
@@ -621,31 +674,93 @@
             })
             .catch(error => {
                 console.error('Error updating downloads:', error);
-                const downloadsList = document.getElementById('downloadsList');
-                downloadsList.innerHTML = `
-                    <div class="list-group-item text-center text-muted py-4">
-                        <i class="fas fa-exclamation-triangle fa-2x mb-2 text-warning"></i>
-                        <p class="mb-0">Ошибка загрузки списка</p>
-                        <small class="text-muted">Попробуйте обновить страницу</small>
-                    </div>
-                `;
             });
+    }
+
+    // Функции для управления загрузками
+    function pauseDownload(downloadId) {
+        fetch('/yt-dlp/downloads/pause', {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/x-www-form-urlencoded',
+            },
+            body: new URLSearchParams({ downloadId })
+        })
+        .then(response => response.text())
+        .then(message => showNotification(message, 'success'))
+        .catch(error => showNotification('Ошибка: ' + error, 'error'));
+    }
+
+    function resumeDownload(downloadId) {
+        fetch('/yt-dlp/downloads/resume', {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/x-www-form-urlencoded',
+            },
+            body: new URLSearchParams({ downloadId })
+        })
+        .then(response => response.text())
+        .then(message => showNotification(message, 'success'))
+        .catch(error => showNotification('Ошибка: ' + error, 'error'));
+    }
+
+    function cancelDownload(downloadId) {
+        if (confirm('Вы уверены, что хотите отменить загрузку?')) {
+            fetch('/yt-dlp/downloads/cancel', {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/x-www-form-urlencoded',
+                },
+                body: new URLSearchParams({ downloadId })
+            })
+            .then(response => response.text())
+            .then(message => showNotification(message, 'success'))
+            .catch(error => showNotification('Ошибка: ' + error, 'error'));
+        }
+    }
+
+    function deleteDownload(downloadId) {
+        if (confirm('Вы уверены, что хотите удалить этот файл?')) {
+            fetch('/yt-dlp/downloads/delete', {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/x-www-form-urlencoded',
+                },
+                body: new URLSearchParams({ downloadId })
+            })
+            .then(response => response.text())
+            .then(message => {
+                showNotification(message, 'success');
+                updateDownloadsList();
+            })
+            .catch(error => showNotification('Ошибка: ' + error, 'error'));
+        }
     }
 
     function renderProgressBar(status, progress, errorMessage) {
         if (status === 'downloading') {
             return `
-                <div class="progress mb-2 mt-2" style="height: 8px;">
-                    <div class="progress-bar progress-bar-striped progress-bar-animated"
-                         style="width: ${progress}%; background-color: #ffc107;">
+                <div class="progress mb-2" style="height: 8px;">
+                    <div class="progress-bar progress-bar-striped progress-bar-animated bg-warning"
+                         style="width: ${progress}%">
                     </div>
                 </div>
                 <small class="text-muted">${progress}%</small>
             `;
+        } else if (status === 'paused') {
+            return `
+                <div class="progress mb-2" style="height: 8px;">
+                    <div class="progress-bar bg-info" style="width: ${progress}%">
+                    </div>
+                </div>
+                <small class="text-info"><i class="fas fa-pause me-1"></i>Приостановлено: ${progress}%</small>
+            `;
         } else if (status === 'completed') {
-            return `<div class="text-success mb-2 mt-2"><i class="fas fa-check-circle me-1"></i>Завершено</div>`;
+            return `<div class="text-success mb-2"><i class="fas fa-check-circle me-1"></i>Завершено</div>`;
         } else if (status === 'error') {
-            return `<div class="text-danger mb-2 mt-2"><i class="fas fa-exclamation-circle me-1"></i>${errorMessage}</div>`;
+            return `<div class="text-danger mb-2"><i class="fas fa-exclamation-circle me-1"></i>${errorMessage}</div>`;
+        } else if (status === 'cancelled') {
+            return `<div class="text-secondary mb-2"><i class="fas fa-ban me-1"></i>Отменено</div>`;
         }
         return '';
     }
@@ -655,6 +770,8 @@
             case 'downloading': return 'bg-warning';
             case 'completed': return 'bg-success';
             case 'error': return 'bg-danger';
+            case 'paused': return 'bg-info';
+            case 'cancelled': return 'bg-secondary';
             default: return 'bg-secondary';
         }
     }
@@ -665,6 +782,8 @@
             'downloading': 'Загружается',
             'completed': 'Завершено',
             'error': 'Ошибка',
+            'paused': 'Приостановлено',
+            'cancelled': 'Отменено',
             'unknown': 'Неизвестно'
         };
         return statusMap[status] || status;
