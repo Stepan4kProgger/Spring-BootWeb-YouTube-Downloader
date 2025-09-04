@@ -119,17 +119,42 @@ public class WebController {
     @ResponseBody
     public List<DownloadProgress> getAllDownloads() {
         List<DownloadProgress> allDownloads = new ArrayList<>();
-        allDownloads.addAll(ytDlpService.getActiveDownloads());
-        allDownloads.addAll(ytDlpService.getDownloadHistory());
+        List<DownloadProgress> activeDownloads = ytDlpService.getActiveDownloads();
+        List<DownloadProgress> historyDownloads = ytDlpService.getDownloadHistory();
 
-        // Сортируем по дате
+        // Сначала добавляем активные загрузки
+        allDownloads.addAll(activeDownloads);
+        // Затем добавляем историю
+        allDownloads.addAll(historyDownloads);
+
+        // Сортируем: активные загрузки сначала, затем по дате
         allDownloads.sort((a, b) -> {
-            LocalDateTime aTime = a.getEndTime() != null ? a.getEndTime() : a.getStartTime();
-            LocalDateTime bTime = b.getEndTime() != null ? b.getEndTime() : b.getStartTime();
+            // Проверяем, является ли загрузка активной
+            boolean aIsActive = a.getStatus() != null && a.getStatus().equals("downloading");
+            boolean bIsActive = b.getStatus() != null && b.getStatus().equals("downloading");
 
-            if (aTime == null) return 1;
-            if (bTime == null) return -1;
-            return bTime.compareTo(aTime);
+            // Активные загрузки всегда выше завершенных/ошибок
+            if (aIsActive && !bIsActive) {
+                return -1; // a идет перед b
+            } else if (!aIsActive && bIsActive) {
+                return 1; // b идет перед a
+            } else if (aIsActive && bIsActive) {
+                // Если обе активные - сортируем по времени начала (новые выше)
+                LocalDateTime aTime = a.getStartTime();
+                LocalDateTime bTime = b.getStartTime();
+
+                if (aTime == null) return 1;
+                if (bTime == null) return -1;
+                return bTime.compareTo(aTime); // новые выше старых
+            } else {
+                // Если обе не активные - сортируем по времени окончания
+                LocalDateTime aTime = a.getEndTime() != null ? a.getEndTime() : a.getStartTime();
+                LocalDateTime bTime = b.getEndTime() != null ? b.getEndTime() : b.getStartTime();
+
+                if (aTime == null) return 1;
+                if (bTime == null) return -1;
+                return bTime.compareTo(aTime); // новые выше старых
+            }
         });
 
         return allDownloads;

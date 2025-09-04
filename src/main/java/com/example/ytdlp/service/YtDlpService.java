@@ -13,13 +13,11 @@ import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.beans.factory.annotation.Value;
-import org.springframework.core.io.Resource;
-import org.springframework.core.io.UrlResource;
-import org.springframework.http.HttpHeaders;
-import org.springframework.http.ResponseEntity;
 import org.springframework.stereotype.Service;
 
 import java.io.*;
+import java.net.URLDecoder;
+import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.Paths;
@@ -237,7 +235,7 @@ public class YtDlpService {
             // Создаем отдельный поток для чтения вывода в реальном времени
             Thread outputReaderThread = new Thread(() -> {
                 try (BufferedReader reader = new BufferedReader(
-                        new InputStreamReader(process.getInputStream()))) {
+                        new InputStreamReader(process.getInputStream(), StandardCharsets.UTF_8))) {
                     String line;
                     while ((line = reader.readLine()) != null) {
                         output.append(line).append("\n");
@@ -350,13 +348,16 @@ public class YtDlpService {
         command.add(ytDlpPath);
         command.add(request.getUrl());
 
+        // Добавляем поддержку Unicode
+        command.add("--encoding");
+        command.add("UTF-8");
+
         // Добавляем опции
         if (request.getFormat() != null) {
             command.add("-f");
             command.add(request.getFormat());
         }
 
-        // УБРАЛИ outputTemplate - используем стандартное имя файла
         command.add("-o");
         command.add(Paths.get(targetDirectory, "%(title)s.%(ext)s").toString());
 
@@ -386,7 +387,7 @@ public class YtDlpService {
             Process process = processBuilder.start();
 
             try (BufferedReader reader = new BufferedReader(
-                    new InputStreamReader(process.getInputStream()))) {
+                    new InputStreamReader(process.getInputStream(), StandardCharsets.UTF_8))) {
                 String version = reader.readLine();
                 return version != null ? version : "Неизвестная версия";
             }
@@ -396,24 +397,6 @@ public class YtDlpService {
         } catch (Exception e) {
             log.error("Unexpected error getting version: {}", e.getMessage(), e);
             return "Неизвестная версия";
-        }
-    }
-
-    public ResponseEntity<Resource> downloadFile(String filename, String directory) throws IOException {
-        if (directory == null || directory.trim().isEmpty()) {
-            throw new IOException("Директория не указана");
-        }
-
-        Path file = Paths.get(directory).resolve(filename);
-        Resource resource = new UrlResource(file.toUri());
-
-        if (resource.exists() && resource.isReadable()) {
-            return ResponseEntity.ok()
-                    .header(HttpHeaders.CONTENT_DISPOSITION,
-                            "attachment; filename=\"" + resource.getFilename() + "\"")
-                    .body(resource);
-        } else {
-            throw new IOException("Файл не найден или недоступен для чтения");
         }
     }
 
@@ -457,17 +440,20 @@ public class YtDlpService {
         }
 
         try {
+            // Декодируем строку для обработки кириллицы
+            String decodedPath = URLDecoder.decode(fullPath, StandardCharsets.UTF_8);
+
             // Извлекаем только имя файла из полного пути
-            File file = new File(fullPath);
+            File file = new File(decodedPath);
             String filename = file.getName();
 
-            // Если имя файла выглядит корректно (содержит точку и не слишком короткое)
+            // Если имя файла выглядит корректно
             if (filename.contains(".") && filename.length() > 3) {
                 return filename;
             }
 
-            // Если это не похоже на имя файла, попробуем извлечь последний сегмент пути
-            String[] pathParts = fullPath.replace("\\\\", "/").replace("\\", "/").split("/");
+            // Альтернативный метод извлечения имени файла
+            String[] pathParts = decodedPath.replace("\\\\", "/").replace("\\", "/").split("/");
             if (pathParts.length > 0) {
                 String lastPart = pathParts[pathParts.length - 1];
                 if (lastPart.contains(".") && lastPart.length() > 3) {
@@ -621,7 +607,7 @@ public class YtDlpService {
         log.info("Download history cleared");
     }
 
-    // Убедимся, что метод getDownloadHistory возвращает все записи
+
     public List<DownloadProgress> getDownloadHistory() {
         // Исключаем активные загрузки из истории
         Set<String> activeUrls = getActiveDownloads().stream()
@@ -637,7 +623,7 @@ public class YtDlpService {
 
                     if (aTime == null) return 1;
                     if (bTime == null) return -1;
-                    return bTime.compareTo(aTime);
+                    return bTime.compareTo(aTime); // новые выше старых
                 })
                 .collect(Collectors.toList());
     }
