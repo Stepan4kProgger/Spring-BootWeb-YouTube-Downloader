@@ -14,6 +14,7 @@ import org.springframework.ui.Model;
 import org.springframework.web.bind.annotation.*;
 import org.springframework.web.servlet.mvc.support.RedirectAttributes;
 
+import java.io.File;
 import java.net.URLDecoder;
 import java.nio.charset.StandardCharsets;
 import java.time.LocalDateTime;
@@ -47,16 +48,23 @@ public class WebController {
             if (path == null || path.trim().isEmpty()) {
                 model.addAttribute("drives", ytDlpService.getAvailableDrives());
                 model.addAttribute("currentPath", "");
-            } else {
-                String decodedPath = URLDecoder.decode(path, StandardCharsets.UTF_8);
-                model.addAttribute("items", ytDlpService.listDirectory(decodedPath));
-                model.addAttribute("currentPath", decodedPath);
+                return "browser";
+            }
+            String decodedPath = URLDecoder.decode(path, StandardCharsets.UTF_8);
+            model.addAttribute("items", ytDlpService.listDirectory(decodedPath));
+            model.addAttribute("currentPath", decodedPath);
+
+            File currentDir = new File(decodedPath);
+            File parentDir = currentDir.getParentFile();
+            if (parentDir != null && parentDir.exists()) {
+                model.addAttribute("parentPath", parentDir.getAbsolutePath());
             }
         } catch (Exception e) {
             model.addAttribute("error", e.getMessage());
             if (path != null) {
                 try {
-                    model.addAttribute("currentPath", URLDecoder.decode(path, StandardCharsets.UTF_8));
+                    String decodedPath = URLDecoder.decode(path, StandardCharsets.UTF_8);
+                    model.addAttribute("currentPath", decodedPath);
                 } catch (Exception ex) {
                     model.addAttribute("currentPath", path);
                 }
