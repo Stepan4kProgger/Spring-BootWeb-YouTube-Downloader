@@ -1,8 +1,9 @@
 package com.example.ytdlp.service;
 
-import com.example.ytdlp.model.DownloadProgress;
-import com.example.ytdlp.model.DownloadRequest;
-import com.example.ytdlp.model.DownloadResponse;
+import com.example.ytdlp.utils.constants.RegexPatterns;
+import com.example.ytdlp.utils.model.DownloadProgress;
+import com.example.ytdlp.utils.model.DownloadRequest;
+import com.example.ytdlp.utils.model.DownloadResponse;
 import com.example.ytdlp.config.ApplicationConfig;
 import com.fasterxml.jackson.core.type.TypeReference;
 import com.fasterxml.jackson.databind.DeserializationFeature;
@@ -26,9 +27,9 @@ import java.nio.file.Paths;
 import java.time.LocalDateTime;
 import java.util.*;
 import java.util.concurrent.ConcurrentHashMap;
-import java.util.concurrent.ExecutorService;
-import java.util.concurrent.Executors;
 import java.util.concurrent.TimeUnit;
+import java.util.regex.Matcher;
+import java.util.regex.Pattern;
 import java.util.stream.Collectors;
 
 @Slf4j
@@ -50,7 +51,6 @@ public class YtDlpService {
     private final Map<String, DownloadProgress> activeDownloads = new ConcurrentHashMap<>();
     private final List<DownloadProgress> downloadHistory = Collections.synchronizedList(new ArrayList<>());
     private final Map<String, Process> activeProcesses = new ConcurrentHashMap<>();
-    private final ExecutorService progressExecutor = Executors.newCachedThreadPool();
 
     @PostConstruct
     public void init() {
@@ -59,65 +59,31 @@ public class YtDlpService {
 
     // Метод для загрузки истории из файла
     private void loadDownloadHistory() {
-        try {
-            Path historyPath = Paths.get(HISTORY_FILE);
-            if (Files.exists(historyPath)) {
-                ObjectMapper objectMapper = new ObjectMapper();
-                objectMapper.registerModule(new JavaTimeModule());
-                objectMapper.disable(DeserializationFeature.FAIL_ON_UNKNOWN_PROPERTIES);
-
-                List<DownloadProgress> loadedHistory = objectMapper.readValue(
-                        historyPath.toFile(),
-                        new TypeReference<List<DownloadProgress>>() {}
-                );
-
-                downloadHistory.clear();
-                downloadHistory.addAll(loadedHistory);
-
-                log.info("Loaded {} items from download history", downloadHistory.size());
-            }
-        } catch (IOException e) {
-            log.error("Error loading download history", e);
-            // Создаем пустой файл при ошибке
-            saveDownloadHistory();
-        } catch (Exception e) {
-            log.error("Error parsing download history", e);
-            // Пытаемся восстановить из backup формата
-            try {
-                loadLegacyHistoryFormat();
-            } catch (Exception ex) {
-                log.error("Failed to load legacy format", ex);
-            }
-        }
-    }
-
-    // Метод для загрузки старого формата (если нужно)
-    private void loadLegacyHistoryFormat() throws IOException {
         Path historyPath = Paths.get(HISTORY_FILE);
-        if (Files.exists(historyPath)) {
-            List<String> lines = Files.readAllLines(historyPath, StandardCharsets.UTF_8);
+
+        if (!Files.exists(historyPath)) {
+            log.info("No download history file found, creating empty history");
+            saveDownloadHistory();
+            return;
+        }
+
+        try {
+            ObjectMapper objectMapper = new ObjectMapper();
+            objectMapper.registerModule(new JavaTimeModule());
+            objectMapper.disable(DeserializationFeature.FAIL_ON_UNKNOWN_PROPERTIES);
+
+            List<DownloadProgress> loadedHistory = objectMapper.readValue(
+                    historyPath.toFile(),
+                    new TypeReference<>() {}
+            );
+
             downloadHistory.clear();
+            downloadHistory.addAll(loadedHistory);
+            log.info("Loaded {} items from download history", downloadHistory.size());
 
-            for (String line : lines) {
-                if (!line.trim().isEmpty()) {
-                    String[] parts = line.split("\\|");
-                    if (parts.length >= 6) {
-                        DownloadProgress progress = new DownloadProgress();
-                        progress.setUrl(parts[0]);
-                        progress.setFilename(parts[1]);
-                        progress.setStatus(parts[2]);
-                        progress.setProgress(Integer.parseInt(parts[3]));
-                        progress.setStartTime(LocalDateTime.parse(parts[4]));
-                        progress.setEndTime(LocalDateTime.parse(parts[5]));
-                        progress.setDownloadDirectory(parts.length > 6 ? parts[6] : "");
-                        progress.setErrorMessage(parts.length > 7 ? parts[7] : "");
-
-                        downloadHistory.add(progress);
-                    }
-                }
-            }
-            log.info("Loaded {} items from legacy history format", downloadHistory.size());
-            // Сохраняем в новом формате
+        } catch (Exception e) {
+            log.error("Error loading download history from JSON format. Creating empty history.", e);
+            downloadHistory.clear();
             saveDownloadHistory();
         }
     }
@@ -150,7 +116,7 @@ public class YtDlpService {
 
             String json = objectMapper.writeValueAsString(historyForSave);
             Path historyPath = Paths.get(HISTORY_FILE);
-            Files.write(historyPath, json.getBytes(StandardCharsets.UTF_8));
+            Files.writeString(historyPath, json);
 
             log.info("Saved {} items to download history file: {}",
                     historyForSave.size(), historyPath.toAbsolutePath());
@@ -288,54 +254,7 @@ public class YtDlpService {
             StringBuilder output = new StringBuilder();
 
             // Создаем отдельный поток для чтения вывода в реальном времени
-            Thread outputReaderThread = new Thread(() -> {
-                try (BufferedReader reader = new BufferedReader(
-                        new InputStreamReader(process.getInputStream(), StandardCharsets.UTF_8))) {
-                    String line;
-                    while ((line = reader.readLine()) != null) {
-                        output.append(line).append("\n");
-                        log.info("yt-dlp: {}", line);
-
-                        // Обрабатываем строки в реальном времени для прогресса
-                        if (line.contains("[download]")) {
-                            // Парсим прогресс
-                            int currentProgress = parseProgressFromLine(line);
-                            if (currentProgress > 0) {
-                                progress.setProgress(currentProgress);
-                                log.debug("Download progress: {}%", currentProgress);
-                            }
-
-                            // Обновляем имя файла в реальном времени
-                            String filename = null;
-                            if (line.contains("Destination:")) {
-                                filename = extractFilenameFromDestinationLine(line);
-                            } else if (line.contains("has already been downloaded")) {
-                                filename = extractFilenameFromAlreadyDownloadedLine(line);
-                            } else {
-                                filename = extractFilenameFromOtherLines(line);
-                            }
-
-                            if (filename != null && !filename.equals("unknown")) {
-                                progress.setFilename(filename);
-                                log.info("Detected filename in real-time: {}", filename);
-                            }
-                        }
-
-                        // Также обрабатываем другие паттерны
-                        if (line.contains("Writing") || line.contains("[ffmpeg]") || line.contains("[Merger]")) {
-                            String filename = extractFilenameFromOtherLines(line);
-                            if (filename != null && !filename.equals("unknown")) {
-                                progress.setFilename(filename);
-                                log.info("Detected filename from other pattern: {}", filename);
-                            }
-                        }
-                    }
-                } catch (IOException e) {
-                    log.error("Error reading process output: {}", e.getMessage());
-                }
-            });
-
-            outputReaderThread.start();
+            Thread outputReaderThread = getOutputReaderThread(process, output, progress);
 
             // Ждем завершения процесса
             int exitCode = process.waitFor();
@@ -355,9 +274,7 @@ public class YtDlpService {
 
                 log.info("Download completed successfully. Filename: {}", filename);
 
-                // Сохраняем в историю
-                downloadHistory.add(progress);
-                saveDownloadHistory();
+                addToDownloadHistory(progress);
 
                 return new DownloadResponse(true, "Download completed successfully",
                         targetDirectory, filename, null);
@@ -371,31 +288,71 @@ public class YtDlpService {
 
                 log.error("Download failed. Exit code: {}, Output: {}", exitCode, fullOutput);
 
-                // Сохраняем в историю даже при ошибке
-                downloadHistory.add(progress);
-                saveDownloadHistory();
+                addToDownloadHistory(progress);
 
                 return new DownloadResponse(false, null, targetDirectory, filename,
                         "Download failed with exit code: " + exitCode + ". Output: " + fullOutput);
             }
 
         } catch (IOException | InterruptedException e) {
-            progress.setStatus("error");
-            progress.setErrorMessage("Error: " + e.getMessage());
-            progress.setEndTime(LocalDateTime.now());
-            activeProcesses.remove(downloadId);
-            log.error("Error during download: {}", e.getMessage(), e);
-
-            // Сохраняем в историю при ошибке
-            downloadHistory.add(progress);
-            saveDownloadHistory();
-
-            return new DownloadResponse(false, null, null, "unknown",
-                    "Error: " + e.getMessage());
+            return handleError(downloadId, progress, e, "Download process error");
+        } catch (Exception e) {
+            return handleError(downloadId, progress, e, "Unexpected download error");
         } finally {
-            // Удаляем из активных загрузок через некоторое время
             scheduleCleanup(downloadId);
         }
+    }
+
+    private Thread getOutputReaderThread(Process process, StringBuilder output, DownloadProgress progress) {
+        Thread outputReaderThread = new Thread(() -> {
+            try (BufferedReader reader = new BufferedReader(
+                    new InputStreamReader(process.getInputStream(), StandardCharsets.UTF_8))) {
+                String line;
+                while ((line = reader.readLine()) != null) {
+                    output.append(line).append("\n");
+                    log.info("yt-dlp: {}", line);
+
+                    // Обрабатываем строки в реальном времени для прогресса
+                    if (line.contains("[download]")) {
+                        // Парсим прогресс
+                        int currentProgress = parseProgressFromLine(line);
+                        if (currentProgress > 0) {
+                            progress.setProgress(currentProgress);
+                            log.debug("Download progress: {}%", currentProgress);
+                        }
+
+                        // Обновляем имя файла в реальном времени
+                        String filename;
+                        if (line.contains("Destination:")) {
+                            filename = extractFilename(line, "destination");
+                        } else if (line.contains("has already been downloaded")) {
+                            filename = extractFilename(line, "already_downloaded");
+                        } else {
+                            filename = extractFilename(line, "general");
+                        }
+
+                        if (!filename.equals("unknown")) {
+                            progress.setFilename(filename);
+                            log.info("Detected filename in real-time: {}", filename);
+                        }
+                    }
+
+                    // Также обрабатываем другие паттерны
+                    if (line.contains("Writing") || line.contains("[ffmpeg]") || line.contains("[Merger]")) {
+                        String filename = extractFilename(line, "general");
+                        if (!filename.equals("unknown")) {
+                            progress.setFilename(filename);
+                            log.info("Detected filename from other pattern: {}", filename);
+                        }
+                    }
+                }
+            } catch (IOException e) {
+                log.error("Error reading process output: {}", e.getMessage());
+            }
+        });
+
+        outputReaderThread.start();
+        return outputReaderThread;
     }
 
     private List<String> buildCommand(DownloadRequest request, String ytDlpPath, String targetDirectory) {
@@ -481,8 +438,7 @@ public class YtDlpService {
     // Вспомогательные методы для парсинга
     private int parseProgressFromLine(String line) {
         // Пример: [download]  12.5% of 12.34MiB at 1.23MiB/s ETA 00:10
-        java.util.regex.Matcher matcher = java.util.regex.Pattern.compile(
-                "\\[download]\\s+(\\d+\\.?\\d*)%").matcher(line);
+        java.util.regex.Matcher matcher = RegexPatterns.PROGRESS_PATTERN.matcher(line);
         if (matcher.find()) {
             return (int) Float.parseFloat(matcher.group(1));
         }
@@ -523,41 +479,42 @@ public class YtDlpService {
         }
     }
 
-    private String extractFilenameFromDestinationLine(String line) {
-        try {
-            // Паттерн: [download] Destination: filename.ext
-            String destinationPart = line.substring(line.indexOf("Destination:") + 12).trim();
-
-            // Удаляем кавычки если есть
-            if (destinationPart.startsWith("\"") && destinationPart.endsWith("\"")) {
-                destinationPart = destinationPart.substring(1, destinationPart.length() - 1);
-            }
-
-            // Извлекаем только имя файла (последняя часть пути)
-            return extractCleanFilename(destinationPart);
-        } catch (Exception e) {
-            log.error("Error parsing destination line: {}", e.getMessage());
+    private String extractFilename(String text, String patternType) {
+        if (text == null || text.isEmpty()) {
             return "unknown";
         }
-    }
 
-    // Метод для парсинга других строк вывода
-    private String extractFilenameFromOtherLines(String line) {
         try {
-            // Ищем паттерны с расширениями файлов
-            java.util.regex.Matcher matcher = java.util.regex.Pattern.compile(
-                    "([^\\s]+\\.(mp4|mp3|webm|m4a|ogg|wav|flv|avi|mov|wmv|mkv))").matcher(line);
+            Pattern pattern;
+            int groupIndex = switch (patternType) {
+                case "destination" -> {
+                    // Паттерн: [download] Destination: filename.ext
+                    pattern = RegexPatterns.DESTINATION_PATTERN;
+                    yield 1;
+                }
+                case "already_downloaded" -> {
+                    // Паттерн для уже скачанных файлов (Windows и Unix пути)
+                    pattern = RegexPatterns.ALREADY_DOWNLOADED_PATTERN;
+                    yield 1;
+                }
+                default -> {
+                    // Общий паттерн для любых строк с расширениями файлов
+                    pattern = RegexPatterns.GENERAL_FILE_PATTERN;
+                    yield 1;
+                }
+            };
+
+            Matcher matcher = pattern.matcher(text);
             if (matcher.find()) {
-                String filename = matcher.group(1);
-                return extractCleanFilename(filename);
+                String matchedText = matcher.group(groupIndex);
+                return extractCleanFilename(matchedText);
             }
         } catch (Exception e) {
-            log.error("Error parsing other line: {}", e.getMessage());
+            log.error("Error parsing {} pattern from text: {}", patternType, text, e);
         }
-        return null;
+        return "unknown";
     }
 
-    // Улучшенный метод извлечения имени файла из вывода
     private String extractFilenameFromOutput(String output) {
         log.info("Parsing complete output for filename");
         log.info("Full output: {}", output);
@@ -567,7 +524,7 @@ public class YtDlpService {
         for (String line : lines) {
             // Ищем строки типа: [download] D:\downloads\Full File Name.mp4 has already been downloaded
             if (line.contains("has already been downloaded") && line.contains("[download]")) {
-                String filename = extractFilenameFromAlreadyDownloadedLine(line);
+                String filename = extractFilename(line, "already_downloaded");
                 if (!filename.equals("unknown")) {
                     log.info("Found filename in 'already downloaded' line: {}", filename);
                     return filename;
@@ -576,7 +533,7 @@ public class YtDlpService {
 
             // Ищем строку Destination в выводе
             if (line.contains("Destination:")) {
-                String filename = extractFilenameFromDestinationLine(line);
+                String filename = extractFilename(line, "destination");
                 if (!filename.equals("unknown")) {
                     log.info("Found filename in Destination line: {}", filename);
                     return filename;
@@ -587,8 +544,8 @@ public class YtDlpService {
         // Если не нашли, ищем другие паттерны
         for (String line : lines) {
             if (line.contains("[download]") || line.contains("Writing") || line.contains("[ffmpeg]")) {
-                String filename = extractFilenameFromOtherLines(line);
-                if (filename != null && !filename.equals("unknown")) {
+                String filename = extractFilename(line, "general");
+                if (!filename.equals("unknown")) {
                     log.info("Found filename in other line: {}", filename);
                     return filename;
                 }
@@ -596,8 +553,7 @@ public class YtDlpService {
         }
 
         // Если всё ещё не нашли, ищем любые упоминания файлов с расширениями
-        java.util.regex.Matcher matcher = java.util.regex.Pattern.compile(
-                "([a-zA-Z]:\\\\[^\\n]+?\\.(mp4|mp3|webm|m4a|ogg|wav|flv|avi|mov|wmv|mkv))").matcher(output);
+        Matcher matcher = RegexPatterns.WINDOWS_PATH_PATTERN.matcher(output);
         if (matcher.find()) {
             String fullPath = matcher.group(1);
             String filename = extractCleanFilename(fullPath);
@@ -608,37 +564,6 @@ public class YtDlpService {
         log.warn("Could not find filename in output. Output: {}", output);
         return "unknown";
     }
-
-    // Добавим более специфичные регулярные выражения
-    private String extractFilenameFromAlreadyDownloadedLine(String line) {
-        try {
-            // Более точное регулярное выражение для Windows путей
-            java.util.regex.Matcher matcher = java.util.regex.Pattern.compile(
-                            "[a-zA-Z]:\\\\[^\\n]+?\\.(mp4|mp3|webm|m4a|ogg|wav|flv|avi|mov|wmv|mkv)")
-                    .matcher(line);
-
-            if (matcher.find()) {
-                String fullPath = matcher.group();
-                return extractCleanFilename(fullPath);
-            }
-
-            // Альтернативный вариант для Unix-подобных путей
-            matcher = java.util.regex.Pattern.compile(
-                            "/[^\\n]+?\\.(mp4|mp3|webm|m4a|ogg|wav|flv|avi|mov|wmv|mkv)")
-                    .matcher(line);
-
-            if (matcher.find()) {
-                String fullPath = matcher.group();
-                return extractCleanFilename(fullPath);
-            }
-
-            return "unknown";
-        } catch (Exception e) {
-            log.error("Error parsing 'already downloaded' line: {}", e.getMessage());
-            return "unknown";
-        }
-    }
-
 
     private void scheduleCleanup(String downloadId) {
         new Thread(() -> {
@@ -651,12 +576,11 @@ public class YtDlpService {
         }).start();
     }
 
-    // Метод для получения активных загрузок
     public List<DownloadProgress> getActiveDownloads() {
         return new ArrayList<>(activeDownloads.values());
     }
 
-    public void clearDownloadHistory() throws IOException {
+    public void clearDownloadHistory() {
         downloadHistory.clear();
         saveDownloadHistory();
         log.info("Download history cleared");
@@ -682,7 +606,6 @@ public class YtDlpService {
                 .collect(Collectors.toList());
     }
 
-    // Обновим методы pause/cancel для удаления процессов
     public boolean pauseDownload(String downloadId) {
         DownloadProgress progress = activeDownloads.get(downloadId);
         if (progress != null && progress.getProcess() != null &&
@@ -746,8 +669,7 @@ public class YtDlpService {
                 activeProcesses.remove(downloadId);
 
                 // Сохраняем в историю
-                downloadHistory.add(progress);
-                saveDownloadHistory();
+                addToDownloadHistory(progress);
 
                 // Удаляем из активных загрузок
                 activeDownloads.remove(downloadId);
@@ -774,10 +696,8 @@ public class YtDlpService {
     }
 
     public boolean deleteDownloadedFile(String downloadId) {
-        DownloadProgress progress = null;
-
         // Ищем в активных загрузках
-        progress = activeDownloads.get(downloadId);
+        DownloadProgress progress = activeDownloads.get(downloadId);
         if (progress == null) {
             // Ищем в истории
             progress = downloadHistory.stream()
@@ -811,11 +731,8 @@ public class YtDlpService {
         // 1. Останавливаем все процессы yt-dlp
         stopAllProcesses();
 
-        // 2. Обновляем статусы всех активных загрузок
+        // 2. Обновляем и сохраняем статусы всех активных загрузок
         updateActiveDownloadsStatus();
-
-        // 3. Сохраняем историю
-        saveDownloadHistory();
 
         log.info("All downloads stopped successfully");
     }
@@ -829,34 +746,27 @@ public class YtDlpService {
             try {
                 if (process != null && process.isAlive()) {
                     log.info("Stopping process for download: {}", downloadId);
-
-                    // Принудительное уничтожение процесса
                     process.destroy();
-
-                    // Ждем завершения
-                    if (process.waitFor(3, TimeUnit.SECONDS)) {
-                        log.info("Process stopped gracefully: {}", downloadId);
-                    } else {
-                        // Принудительно убиваем процесс
-                        process.destroyForcibly();
-                        log.warn("Process force destroyed: {}", downloadId);
+                    if (!process.waitFor(3, TimeUnit.SECONDS)) {
+                        forceStopProcess(process);
                     }
                     stoppedCount++;
                 }
             } catch (Exception e) {
                 log.error("Error stopping process for download {}: {}", downloadId, e.getMessage());
-                try {
-                    // Последняя попытка убить процесс
-                    if (process != null) {
-                        process.destroyForcibly();
-                    }
-                } catch (Exception ex) {
-                    log.error("Failed to force destroy process: {}", ex.getMessage());
-                }
+                forceStopProcess(process);
             }
         }
         activeProcesses.clear();
         log.info("Stopped {} processes", stoppedCount);
+    }
+
+    private void forceStopProcess(Process process) {
+        try {
+            process.destroyForcibly();
+        } catch (Exception e) {
+            log.error("Failed to force destroy process: {}", e.getMessage());
+        }
     }
 
     private void updateActiveDownloadsStatus() {
@@ -868,60 +778,52 @@ public class YtDlpService {
                 progress.setEndTime(LocalDateTime.now());
                 progress.setErrorMessage("Загрузка прервана при завершении приложения");
 
-                // Добавляем в историю
-                downloadHistory.add(progress);
+                addToDownloadHistory(progress);
             }
         }
         activeDownloads.clear();
     }
 
-    // Метод для открытия проводника с файлом
+    private void addToDownloadHistory(DownloadProgress progress) {
+        downloadHistory.add(progress);
+        saveDownloadHistory();
+    }
+
+    private DownloadResponse handleError(String downloadId, DownloadProgress progress,
+                                         Exception e, String context) {
+        log.error("Error {}: {}", context, e.getMessage(), e);
+
+        if (progress != null) {
+            progress.setStatus("error");
+            progress.setErrorMessage(context + ": " + e.getMessage());
+            progress.setEndTime(LocalDateTime.now());
+
+            addToDownloadHistory(progress);
+        }
+
+        return new DownloadResponse(false, null, null, "unknown",
+                context + ": " + e.getMessage());
+    }
+
     public void openFileInExplorer(String filename, String directory) throws IOException {
-        if (directory == null || directory.trim().isEmpty()) {
-            throw new IOException("Директория не указана");
-        }
-
-        if (filename == null || filename.trim().isEmpty()) {
-            throw new IOException("Имя файла не указано");
-        }
-
-        Path filePath = Paths.get(directory).resolve(filename);
-        File file = filePath.toFile();
-
-        log.info("Checking file existence: {}", file.getAbsolutePath());
-
-        if (!file.exists()) {
+        Path filePath = Paths.get(directory, filename);
+        if (!Files.exists(filePath)) {
             throw new IOException("Файл не существует: " + filePath);
         }
 
-        // Команды для открытия проводника в разных ОС
         String os = System.getProperty("os.name").toLowerCase();
+        String[] command;
 
-        try {
-            if (os.contains("win")) {
-                // Windows - открываем папку с выделенным файлом
-                log.info("Opening Windows explorer for: {}", file.getAbsolutePath());
-                Runtime.getRuntime().exec(new String[]{"explorer", "/select,", file.getAbsolutePath()});
-
-            } else if (os.contains("mac")) {
-                // Mac
-                log.info("Opening Mac finder for: {}", file.getAbsolutePath());
-                Runtime.getRuntime().exec(new String[]{"open", "-R", file.getAbsolutePath()});
-
-            } else if (os.contains("nix") || os.contains("nux")) {
-                // Linux - открываем папку
-                log.info("Opening Linux file manager for: {}", file.getParent());
-                Runtime.getRuntime().exec(new String[]{"xdg-open", file.getParent()});
-
-            } else {
-                throw new IOException("Неподдерживаемая операционная система: " + os);
-            }
-
-            log.info("Explorer process started successfully");
-
-        } catch (IOException e) {
-            log.error("Failed to start explorer process: {}", e.getMessage());
-            throw new IOException("Не удалось запустить проводник: " + e.getMessage());
+        if (os.contains("win")) {
+            command = new String[]{"explorer", "/select,", filePath.toString()};
+        } else if (os.contains("mac")) {
+            command = new String[]{"open", "-R", filePath.toString()};
+        } else if (os.contains("nix") || os.contains("nux")) {
+            command = new String[]{"xdg-open", filePath.getParent().toString()};
+        } else {
+            throw new IOException("Неподдерживаемая ОС: " + os);
         }
+
+        Runtime.getRuntime().exec(command);
     }
 }

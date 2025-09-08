@@ -1,6 +1,6 @@
 package com.example.ytdlp;
 
-import com.example.ytdlp.tray.TrayManager;
+import com.example.ytdlp.utils.tray.TrayManager;
 import org.springframework.boot.SpringApplication;
 import org.springframework.boot.autoconfigure.SpringBootApplication;
 import org.springframework.context.ConfigurableApplicationContext;
@@ -11,6 +11,7 @@ public class YtDlpApplication {
         // Отключаем headless режим для поддержки системного трея
         System.setProperty("java.awt.headless", "false");
 
+        // Поднимаем контест для последующего извлечения бина с треем
         ConfigurableApplicationContext context = SpringApplication.run(YtDlpApplication.class, args);
 
         // Инициализируем системный трей
@@ -18,6 +19,5 @@ public class YtDlpApplication {
 
         // Добавляем обработчик завершения приложения
         Runtime.getRuntime().addShutdownHook(new Thread(trayManager::removeTrayIcon));
-        //SpringApplication.run(YtDlpApplication.class, args);
     }
 }

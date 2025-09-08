@@ -1,9 +1,9 @@
 package com.example.ytdlp.controller;
 
 import com.example.ytdlp.config.ApplicationConfig; // Изменённый импорт
-import com.example.ytdlp.model.DownloadProgress;
-import com.example.ytdlp.model.DownloadRequest;
-import com.example.ytdlp.model.DownloadResponse;
+import com.example.ytdlp.utils.model.DownloadProgress;
+import com.example.ytdlp.utils.model.DownloadRequest;
+import com.example.ytdlp.utils.model.DownloadResponse;
 import com.example.ytdlp.service.YtDlpService;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
@@ -23,7 +23,6 @@ import java.time.LocalDateTime;
 import java.util.*;
 import java.net.URLDecoder;
 import java.nio.charset.StandardCharsets;
-import java.util.stream.Collectors;
 
 @Slf4j
 @Controller

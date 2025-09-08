@@ -1,7 +1,7 @@
 package com.example.ytdlp.controller;
 
-import com.example.ytdlp.model.DownloadRequest;
-import com.example.ytdlp.model.DownloadResponse;
+import com.example.ytdlp.utils.model.DownloadRequest;
+import com.example.ytdlp.utils.model.DownloadResponse;
 import com.example.ytdlp.service.YtDlpService;
 import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
