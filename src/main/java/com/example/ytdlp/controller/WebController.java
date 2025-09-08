@@ -1,13 +1,12 @@
 package com.example.ytdlp.controller;
 
-import com.example.ytdlp.config.ApplicationConfig; // Изменённый импорт
+import com.example.ytdlp.config.ApplicationConfig;
 import com.example.ytdlp.utils.model.DownloadProgress;
 import com.example.ytdlp.utils.model.DownloadRequest;
 import com.example.ytdlp.utils.model.DownloadResponse;
 import com.example.ytdlp.service.YtDlpService;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
-import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.stereotype.Controller;
@@ -15,47 +14,24 @@ import org.springframework.ui.Model;
 import org.springframework.web.bind.annotation.*;
 import org.springframework.web.servlet.mvc.support.RedirectAttributes;
 
-import java.io.File;
-import java.io.IOException;
-import java.nio.file.Path;
-import java.nio.file.Paths;
-import java.time.LocalDateTime;
-import java.util.*;
 import java.net.URLDecoder;
 import java.nio.charset.StandardCharsets;
+import java.time.LocalDateTime;
+import java.util.*;
 
 @Slf4j
 @Controller
 @RequestMapping("/yt-dlp")
 @RequiredArgsConstructor
 public class WebController {
-
-    @Autowired
-    private YtDlpService ytDlpService;
-
-    @Autowired
-    private ApplicationConfig appConfig;
+    private final YtDlpService ytDlpService;
+    private final ApplicationConfig appConfig;
 
     @GetMapping("/")
     public String home(Model model) {
         model.addAttribute("version", "Загрузка...");
-
-        List<DownloadProgress> activeDownloads = ytDlpService.getActiveDownloads();
-        List<DownloadProgress> downloadHistory = ytDlpService.getDownloadHistory();
-
-        // Логируем для отладки
-        log.info("Active downloads: {}", activeDownloads.size());
-        log.info("Download history: {}", downloadHistory.size());
-
-        if (!downloadHistory.isEmpty()) {
-            log.info("History sample: {} - {}",
-                    downloadHistory.get(0).getFilename(),
-                    downloadHistory.get(0).getStatus());
-        }
-
-        model.addAttribute("activeDownloads", activeDownloads);
-        model.addAttribute("downloadHistory", downloadHistory);
-
+        model.addAttribute("activeDownloads", ytDlpService.getActiveDownloads());
+        model.addAttribute("downloadHistory", ytDlpService.getDownloadHistory());
         return "index";
     }
 
@@ -69,43 +45,23 @@ public class WebController {
     public String browseDirectory(@RequestParam(required = false) String path, Model model) {
         try {
             if (path == null || path.trim().isEmpty()) {
-                // Корневой уровень - показываем диски
-                List<String> drives = ytDlpService.getAvailableDrives();
-                model.addAttribute("drives", drives);
+                model.addAttribute("drives", ytDlpService.getAvailableDrives());
                 model.addAttribute("currentPath", "");
             } else {
-                // Декодируем путь
                 String decodedPath = URLDecoder.decode(path, StandardCharsets.UTF_8);
-
-                // Проверяем существование директории
-                File directory = new File(decodedPath);
-                if (!directory.exists() || !directory.isDirectory()) {
-                    throw new IOException("Директория не существует: " + decodedPath);
-                }
-
-                // Показываем содержимое директории
-                List<YtDlpService.DirectoryItem> items = ytDlpService.listDirectory(decodedPath);
-                model.addAttribute("items", items);
+                model.addAttribute("items", ytDlpService.listDirectory(decodedPath));
                 model.addAttribute("currentPath", decodedPath);
-
-                // Получаем родительскую директорию и кодируем для data-атрибута
-                String parentPath = directory.getParent();
-                if (parentPath != null) {
-                    model.addAttribute("parentPath", parentPath); // Просто путь, без кодирования
-                }
             }
         } catch (Exception e) {
             model.addAttribute("error", e.getMessage());
             if (path != null) {
                 try {
-                    String decodedPath = URLDecoder.decode(path, StandardCharsets.UTF_8);
-                    model.addAttribute("currentPath", decodedPath);
+                    model.addAttribute("currentPath", URLDecoder.decode(path, StandardCharsets.UTF_8));
                 } catch (Exception ex) {
                     model.addAttribute("currentPath", path);
                 }
             }
         }
-
         return "browser";
     }
 
@@ -120,14 +76,14 @@ public class WebController {
     public List<DownloadProgress> getAllDownloads() {
         List<DownloadProgress> allDownloads = new ArrayList<>();
 
-        // Добавляем активные загрузки (без process)
+        // Добавляем активные загрузки (используем конструктор копирования)
         allDownloads.addAll(ytDlpService.getActiveDownloads().stream()
-                .map(this::createSerializableCopy)
+                .map(DownloadProgress::new)
                 .toList());
 
-        // Добавляем историю
+        // Добавляем историю (используем конструктор копирования)
         allDownloads.addAll(ytDlpService.getDownloadHistory().stream()
-                .map(this::createSerializableCopy)
+                .map(DownloadProgress::new)
                 .toList());
 
         // Сортируем: активные сначала, затем по дате
@@ -151,90 +107,50 @@ public class WebController {
         return allDownloads;
     }
 
-    // Вспомогательный метод для создания сериализуемой копии
-    private DownloadProgress createSerializableCopy(DownloadProgress original) {
-        DownloadProgress copy = new DownloadProgress();
-        copy.setUrl(original.getUrl());
-        copy.setFilename(original.getFilename());
-        copy.setStatus(original.getStatus());
-        copy.setProgress(original.getProgress());
-        copy.setStartTime(original.getStartTime());
-        copy.setEndTime(original.getEndTime());
-        copy.setDownloadDirectory(original.getDownloadDirectory());
-        copy.setErrorMessage(original.getErrorMessage());
-        copy.setDownloadId(original.getDownloadId());
-        copy.setCancellable(original.isCancellable());
-        copy.setPausable(original.isPausable());
-        return copy;
-    }
-
-    @PostMapping("/downloads/pause")
+    @PostMapping("/downloads/{action}")
     @ResponseBody
-    public ResponseEntity<String> pauseDownload(@RequestParam String downloadId) {
+    public ResponseEntity<String> handleDownloadAction(
+            @PathVariable String action,
+            @RequestParam String downloadId) {
         try {
-            boolean success = ytDlpService.pauseDownload(downloadId);
+            boolean success = switch (action) {
+                case "pause" -> ytDlpService.pauseDownload(downloadId);
+                case "resume" -> ytDlpService.resumeDownload(downloadId);
+                case "cancel" -> ytDlpService.cancelDownload(downloadId);
+                case "delete" -> ytDlpService.deleteDownloadedFile(downloadId);
+                default -> false;
+            };
+
             if (success) {
-                return ResponseEntity.ok("Загрузка приостановлена");
+                return ResponseEntity.ok(getSuccessMessage(action));
             } else {
                 return ResponseEntity.status(HttpStatus.BAD_REQUEST)
-                        .body("Не удалось приостановить загрузку или загрузка уже завершена");
-            }
-        } catch (Exception e) {
-            log.error("Error pausing download: {}", e.getMessage(), e);
-            return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR)
-                    .body("Ошибка приостановки: " + e.getMessage());
-        }
-    }
-
-    @PostMapping("/downloads/resume")
-    @ResponseBody
-    public ResponseEntity<String> resumeDownload(@RequestParam String downloadId) {
-        try {
-            boolean success = ytDlpService.resumeDownload(downloadId);
-            if (success) {
-                return ResponseEntity.ok("Загрузка возобновлена");
-            } else {
-                return ResponseEntity.status(HttpStatus.BAD_REQUEST)
-                        .body("Не удалось возобновить загрузку");
+                        .body(getErrorMessage(action));
             }
         } catch (Exception e) {
             return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR)
-                    .body("Ошибка возобновления: " + e.getMessage());
+                    .body("Ошибка операции: " + e.getMessage());
         }
     }
 
-    @PostMapping("/downloads/cancel")
-    @ResponseBody
-    public ResponseEntity<String> cancelDownload(@RequestParam String downloadId) {
-        try {
-            boolean success = ytDlpService.cancelDownload(downloadId);
-            if (success) {
-                return ResponseEntity.ok("Загрузка отменена");
-            } else {
-                return ResponseEntity.status(HttpStatus.BAD_REQUEST)
-                        .body("Не удалось отменить загрузку");
-            }
-        } catch (Exception e) {
-            return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR)
-                    .body("Ошибка отмены: " + e.getMessage());
-        }
+    private String getSuccessMessage(String action) {
+        return switch (action) {
+            case "pause" -> "Загрузка приостановлена";
+            case "resume" -> "Загрузка возобновлена";
+            case "cancel" -> "Загрузка отменена";
+            case "delete" -> "Файл удален";
+            default -> "Операция выполнена";
+        };
     }
 
-    @PostMapping("/downloads/delete")
-    @ResponseBody
-    public ResponseEntity<String> deleteDownload(@RequestParam String downloadId) {
-        try {
-            boolean success = ytDlpService.deleteDownloadedFile(downloadId);
-            if (success) {
-                return ResponseEntity.ok("Файл удален");
-            } else {
-                return ResponseEntity.status(HttpStatus.BAD_REQUEST)
-                        .body("Не удалось удалить файл");
-            }
-        } catch (Exception e) {
-            return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR)
-                    .body("Ошибка удаления: " + e.getMessage());
-        }
+    private String getErrorMessage(String action) {
+        return switch (action) {
+            case "pause" -> "Не удалось приостановить загрузку";
+            case "resume" -> "Не удалось возобновить загрузку";
+            case "cancel" -> "Не удалось отменить загрузку";
+            case "delete" -> "Не удалось удалить файл";
+            default -> "Ошибка выполнения операции";
+        };
     }
 
     @PostMapping("/clear-downloads")
@@ -250,51 +166,23 @@ public class WebController {
     }
 
     @PostMapping("/download")
-    public String downloadVideo(@RequestParam String url,
-                                @RequestParam String downloadDirectory,
-                                @RequestParam(required = false) String format,
-                                @RequestParam(required = false) String outputTemplate,
-                                @RequestParam(required = false) Boolean extractAudio,
-                                @RequestParam(required = false) String audioFormat,
-                                @RequestParam(required = false) Integer quality,
-                                RedirectAttributes redirectAttributes) {
-
-        // Проверка на пустую директорию
-        if (downloadDirectory == null || downloadDirectory.trim().isEmpty()) {
-            redirectAttributes.addFlashAttribute("errorMessage",
-                    "Ошибка: Необходимо выбрать папку для загрузки");
+    public String downloadVideo(DownloadRequest request, RedirectAttributes redirectAttributes) {
+        if (request.getDownloadDirectory() == null || request.getDownloadDirectory().trim().isEmpty()) {
+            redirectAttributes.addFlashAttribute("errorMessage", "Ошибка: Необходимо выбрать папку для загрузки");
             return "redirect:/yt-dlp/";
         }
 
-        // Создаем объект запроса
-        DownloadRequest request = new DownloadRequest();
-        request.setUrl(url);
-        request.setDownloadDirectory(downloadDirectory); // Обязательная директория
-        request.setFormat(format);
-        request.setExtractAudio(extractAudio);
-        request.setAudioFormat(audioFormat);
-        request.setQuality(quality);
-
         try {
             DownloadResponse response = ytDlpService.downloadVideo(request);
-
             if (response.isSuccess()) {
-                String successMessage = "Загрузка завершена успешно!";
-                if (response.getFilename() != null && !response.getFilename().equals("unknown")) {
-                    successMessage += " Файл: " + response.getFilename();
-                }
-                successMessage += " Путь: " + response.getOutputPath();
-
-                redirectAttributes.addFlashAttribute("successMessage", successMessage);
+                redirectAttributes.addFlashAttribute("successMessage",
+                        "Загрузка завершена успешно! Файл: " + response.getFilename());
             } else {
                 redirectAttributes.addFlashAttribute("errorMessage",
                         "Ошибка загрузки: " + response.getError());
             }
-
         } catch (Exception e) {
-            log.error("Error during download: {}", e.getMessage(), e);
-            redirectAttributes.addFlashAttribute("errorMessage",
-                    "Ошибка: " + e.getMessage());
+            redirectAttributes.addFlashAttribute("errorMessage", "Ошибка: " + e.getMessage());
         }
 
         return "redirect:/";
@@ -302,37 +190,18 @@ public class WebController {
 
     @PostMapping("/downloads/open-explorer")
     @ResponseBody
-    public ResponseEntity<String> openFileInExplorer(@RequestParam String filename,
-                                                     @RequestParam String directory) {
+    public ResponseEntity<String> openFileInExplorer(
+            @RequestParam String filename,
+            @RequestParam String directory) {
         try {
-            // Ручное декодирование параметров
-            String decodedFilename = URLDecoder.decode(filename, StandardCharsets.UTF_8);
-            String decodedDirectory = URLDecoder.decode(directory, StandardCharsets.UTF_8);
-
-            log.info("Opening file in explorer: {} in {}", decodedFilename, decodedDirectory);
-
-            // Проверяем существование файла
-            Path filePath = Paths.get(decodedDirectory).resolve(decodedFilename);
-            File file = filePath.toFile();
-
-            if (!file.exists()) {
-                log.error("File not found: {}", filePath);
-                return ResponseEntity.status(HttpStatus.NOT_FOUND)
-                        .body("Файл не существует: " + decodedFilename);
-            }
-
-            // Открываем проводник
-            ytDlpService.openFileInExplorer(decodedFilename, decodedDirectory);
-            return ResponseEntity.ok("Проводник открыт с файлом: " + decodedFilename);
-
-        } catch (IOException e) {
-            log.error("Error opening file in explorer: {}", e.getMessage(), e);
+            ytDlpService.openFileInExplorer(
+                    URLDecoder.decode(filename, StandardCharsets.UTF_8),
+                    URLDecoder.decode(directory, StandardCharsets.UTF_8)
+            );
+            return ResponseEntity.ok("Проводник открыт с файлом: " + filename);
+        } catch (Exception e) {
             return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR)
                     .body("Ошибка открытия проводника: " + e.getMessage());
-        } catch (Exception e) {
-            log.error("Unexpected error opening file in explorer: {}", e.getMessage(), e);
-            return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR)
-                    .body("Неожиданная ошибка: " + e.getMessage());
         }
     }
 

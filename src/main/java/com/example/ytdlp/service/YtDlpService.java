@@ -95,23 +95,8 @@ public class YtDlpService {
             objectMapper.disable(SerializationFeature.WRITE_DATES_AS_TIMESTAMPS);
             objectMapper.enable(SerializationFeature.INDENT_OUTPUT);
 
-            // Создаем копию без transient полей
             List<DownloadProgress> historyForSave = downloadHistory.stream()
-                    .map(progress -> {
-                        DownloadProgress copy = new DownloadProgress();
-                        copy.setUrl(progress.getUrl());
-                        copy.setFilename(progress.getFilename());
-                        copy.setStatus(progress.getStatus());
-                        copy.setProgress(progress.getProgress());
-                        copy.setStartTime(progress.getStartTime());
-                        copy.setEndTime(progress.getEndTime());
-                        copy.setDownloadDirectory(progress.getDownloadDirectory());
-                        copy.setErrorMessage(progress.getErrorMessage());
-                        copy.setDownloadId(progress.getDownloadId());
-                        copy.setCancellable(progress.isCancellable());
-                        copy.setPausable(progress.isPausable());
-                        return copy;
-                    })
+                    .map(DownloadProgress::new)
                     .collect(Collectors.toList());
 
             String json = objectMapper.writeValueAsString(historyForSave);
