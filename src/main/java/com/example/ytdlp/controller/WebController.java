@@ -63,8 +63,7 @@ public class WebController {
             model.addAttribute("error", e.getMessage());
             if (path != null) {
                 try {
-                    String decodedPath = URLDecoder.decode(path, StandardCharsets.UTF_8);
-                    model.addAttribute("currentPath", decodedPath);
+                    model.addAttribute("currentPath", URLDecoder.decode(path, StandardCharsets.UTF_8));
                 } catch (Exception ex) {
                     model.addAttribute("currentPath", path);
                 }
@@ -230,4 +229,5 @@ public class WebController {
                     .body("Error during shutdown: " + e.getMessage());
         }
     }
+
 }
