@@ -28,6 +28,13 @@ public class WebController {
     private final YtDlpService ytDlpService;
     private final ApplicationConfig appConfig;
 
+    private static final Map<String, Map<String, String>> ACTION_MESSAGES = Map.of(
+            "pause", Map.of("success", "Загрузка приостановлена", "error", "Не удалось приостановить загрузку"),
+            "resume", Map.of("success", "Загрузка возобновлена", "error", "Не удалось возобновить загрузку"),
+            "cancel", Map.of("success", "Загрузка отменена", "error", "Не удалось отменить загрузку"),
+            "delete", Map.of("success", "Файл удален", "error", "Не удалось удалить файл")
+    );
+
     @GetMapping("/")
     public String home(Model model) {
         model.addAttribute("version", "Загрузка...");
@@ -50,6 +57,7 @@ public class WebController {
                 model.addAttribute("currentPath", "");
                 return "browser";
             }
+
             String decodedPath = URLDecoder.decode(path, StandardCharsets.UTF_8);
             model.addAttribute("items", ytDlpService.listDirectory(decodedPath));
             model.addAttribute("currentPath", decodedPath);
@@ -83,22 +91,14 @@ public class WebController {
     public List<DownloadProgress> getAllDownloads() {
         List<DownloadProgress> allDownloads = new ArrayList<>();
 
-        // Добавляем активные загрузки (используем конструктор копирования)
         allDownloads.addAll(ytDlpService.getActiveDownloads().stream()
-                .map(DownloadProgress::new)
-                .toList());
-
-        // Добавляем историю (используем конструктор копирования)
+                .map(DownloadProgress::new).toList());
         allDownloads.addAll(ytDlpService.getDownloadHistory().stream()
-                .map(DownloadProgress::new)
-                .toList());
+                .map(DownloadProgress::new).toList());
 
-        // Сортируем: активные сначала, затем по дате
         allDownloads.sort((a, b) -> {
-            boolean aIsActive = a.getStatus() != null &&
-                    (a.getStatus().equals("downloading") || a.getStatus().equals("paused"));
-            boolean bIsActive = b.getStatus() != null &&
-                    (b.getStatus().equals("downloading") || b.getStatus().equals("paused"));
+            boolean aIsActive = isActiveStatus(a.getStatus());
+            boolean bIsActive = isActiveStatus(b.getStatus());
 
             if (aIsActive && !bIsActive) return -1;
             if (!aIsActive && bIsActive) return 1;
@@ -112,6 +112,10 @@ public class WebController {
         });
 
         return allDownloads;
+    }
+
+    private boolean isActiveStatus(String status) {
+        return status != null && (status.equals("downloading") || status.equals("paused"));
     }
 
     @PostMapping("/downloads/{action}")
@@ -128,36 +132,18 @@ public class WebController {
                 default -> false;
             };
 
+            Map<String, String> messages = ACTION_MESSAGES.getOrDefault(action,
+                    Map.of("success", "Операция выполнена", "error", "Ошибка выполнения операции"));
+
             if (success) {
-                return ResponseEntity.ok(getSuccessMessage(action));
+                return ResponseEntity.ok(messages.get("success"));
             } else {
-                return ResponseEntity.status(HttpStatus.BAD_REQUEST)
-                        .body(getErrorMessage(action));
+                return ResponseEntity.status(HttpStatus.BAD_REQUEST).body(messages.get("error"));
             }
         } catch (Exception e) {
             return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR)
                     .body("Ошибка операции: " + e.getMessage());
         }
-    }
-
-    private String getSuccessMessage(String action) {
-        return switch (action) {
-            case "pause" -> "Загрузка приостановлена";
-            case "resume" -> "Загрузка возобновлена";
-            case "cancel" -> "Загрузка отменена";
-            case "delete" -> "Файл удален";
-            default -> "Операция выполнена";
-        };
-    }
-
-    private String getErrorMessage(String action) {
-        return switch (action) {
-            case "pause" -> "Не удалось приостановить загрузку";
-            case "resume" -> "Не удалось возобновить загрузку";
-            case "cancel" -> "Не удалось отменить загрузку";
-            case "delete" -> "Не удалось удалить файл";
-            default -> "Ошибка выполнения операции";
-        };
     }
 
     @PostMapping("/clear-downloads")
@@ -229,5 +215,4 @@ public class WebController {
                     .body("Error during shutdown: " + e.getMessage());
         }
     }
-
 }

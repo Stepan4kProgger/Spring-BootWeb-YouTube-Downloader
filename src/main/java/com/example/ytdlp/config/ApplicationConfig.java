@@ -15,7 +15,6 @@ import java.util.concurrent.Executor;
 @EnableAsync
 @ConfigurationProperties(prefix = "app.download")
 public class ApplicationConfig {
-
     private String directory = "D:/downloads";
     private boolean rememberLastDirectory = true;
 
@@ -31,7 +30,6 @@ public class ApplicationConfig {
     }
 
     public void setDirectory(String directory) {
-        // Нормализуем путь
         this.directory = directory.replace("/", File.separator)
                 .replace("\\", File.separator);
     }

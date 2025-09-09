@@ -1,4 +1,3 @@
-// DownloadProgress.java
 package com.example.ytdlp.utils.model;
 
 import com.fasterxml.jackson.annotation.JsonIgnore;
@@ -12,21 +11,21 @@ import java.time.LocalDateTime;
 public class DownloadProgress {
     private String url;
     private String filename;
-    private String status; // "downloading", "completed", "error", "paused", "cancelled"
-    private int progress; // 0-100
+    private String status;
+    private int progress;
     private LocalDateTime startTime;
     private LocalDateTime endTime;
     private String downloadDirectory;
     private String errorMessage;
-    private String downloadId; // Уникальный идентификатор загрузки
+    private String downloadId;
 
     @JsonIgnore
-    private transient Process process; // Ссылка на процесс для управления
+    private transient Process process;
 
     private boolean cancellable = true;
     private boolean pausable = true;
 
-    // Конструктор копирования без process
+    // Конструктор копирования без указания process
     public DownloadProgress(DownloadProgress other) {
         this.url = other.url;
         this.filename = other.filename;
@@ -39,6 +38,5 @@ public class DownloadProgress {
         this.downloadId = other.downloadId;
         this.cancellable = other.cancellable;
         this.pausable = other.pausable;
-        // process намеренно не копируется
     }
 }
