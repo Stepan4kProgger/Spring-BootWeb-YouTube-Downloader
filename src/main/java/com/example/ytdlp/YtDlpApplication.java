@@ -32,5 +32,4 @@ public class YtDlpApplication {
         // Добавляем обработчик завершения приложения
         Runtime.getRuntime().addShutdownHook(new Thread(trayManager::removeTrayIcon));
     }
-
 }

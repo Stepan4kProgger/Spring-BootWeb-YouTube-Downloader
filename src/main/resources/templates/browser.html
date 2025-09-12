@@ -1,14 +1,8 @@
 <!DOCTYPE html>
 <html xmlns:th="http://www.thymeleaf.org" class="theme-light">
-<head th:replace="~{browser_fragments/head :: head}">
-    <!-- Заголовок будет заменен -->
-</head>
-
+<head th:replace="~{browser_fragments/head :: head}"></head>
 <body>
-    <!-- Основной контент -->
     <div th:replace="~{browser_fragments/content :: content}"></div>
-
-    <!-- Скрипты -->
     <div th:replace="~{browser_fragments/scripts :: scripts}"></div>
 </body>
 </html>
