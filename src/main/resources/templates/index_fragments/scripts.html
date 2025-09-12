@@ -5,7 +5,7 @@
   <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.1.3/dist/js/bootstrap.bundle.min.js"></script>
   <script th:inline="javascript">
     /*<![CDATA[*/
-    // Весь JavaScript код из оригинального index.html
+
     // Функция для установки темы
     function setTheme(theme) {
         // Удаляем все theme классы
@@ -140,6 +140,90 @@
         .catch(error => {
             console.error('Ошибка открытия проводника:', error);
             showNotification('Ошибка: ' + error.message, 'error');
+        });
+    }
+
+    // Функция для сохранения настройки очистки истории
+    function saveClearHistorySetting() {
+        const clearHistory = document.getElementById('clearHistoryOnStartup').checked;
+        localStorage.setItem('clearHistoryOnStartup', clearHistory);
+    }
+
+    // Функция для загрузки настройки очистки истории
+    function loadClearHistorySetting() {
+        const clearHistory = localStorage.getItem('clearHistoryOnStartup');
+        if (clearHistory !== null) {
+            document.getElementById('clearHistoryOnStartup').checked = clearHistory === 'true';
+        }
+    }
+
+    // Функция для отправки настройки на сервер
+    function updateClearHistorySetting() {
+        const clearHistory = document.getElementById('clearHistoryOnStartup').checked;
+
+        fetch('/yt-dlp/settings/clear-history-on-startup', {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/x-www-form-urlencoded',
+            },
+            body: new URLSearchParams({ enabled: clearHistory })
+        })
+        .then(response => {
+            if (response.ok) {
+                showNotification('Настройка сохранена', 'success');
+            } else {
+                throw new Error('Ошибка сохранения настройки');
+            }
+        })
+        .catch(error => {
+            showNotification(error.message, 'error');
+            // Восстанавливаем предыдущее значение при ошибке
+            document.getElementById('clearHistoryOnStartup').checked = !clearHistory;
+        });
+    }
+
+    // Функция для загрузки всех настроек
+    function loadAllSettings() {
+        fetch('/yt-dlp/settings')
+            .then(response => response.json())
+            .then(settings => {
+                // Загружаем настройки в форму
+                if (settings.directory && document.getElementById('downloadDirectory').value === '') {
+                    document.getElementById('downloadDirectory').value = settings.directory;
+                    updateSubmitButton();
+                }
+
+                document.getElementById('clearHistoryOnStartup').checked =
+                    settings.clearHistoryOnStartup === 'true';
+
+                // Добавьте другие настройки по мере необходимости
+            })
+            .catch(error => {
+                console.error('Error loading settings:', error);
+            });
+    }
+
+    // Функция для обновления настройки
+    function updateSetting(key, value) {
+        fetch('/yt-dlp/settings/update', {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/x-www-form-urlencoded',
+            },
+            body: new URLSearchParams({ key, value })
+        })
+        .then(response => {
+            if (!response.ok) {
+                throw new Error('Ошибка сохранения настройки');
+            }
+            return response.text();
+        })
+        .then(message => {
+            console.log('Setting updated:', key, value);
+        })
+        .catch(error => {
+            console.error('Error updating setting:', error);
+            showNotification('Ошибка сохранения настройки: ' + error.message, 'error');
         });
     }
 
@@ -488,19 +572,36 @@
         submitButton.disabled = !url || !directory;
     }
 
+    function toggleRememberDirectory(remember) {
+        updateSetting('rememberLastDirectory', remember);
+    }
+
     // Check URL and directory inputs
     document.getElementById('url').addEventListener('input', updateSubmitButton);
     document.getElementById('downloadDirectory').addEventListener('input', updateSubmitButton);
+
+    document.getElementById('clearHistoryOnStartup').addEventListener('change', function() {
+        updateSetting('clearHistoryOnStartup', this.checked);
+    });
+
+    document.getElementById('downloadDirectory').addEventListener('change', function() {
+        if (appConfig.isRememberLastDirectory) { // Это нужно будет получить с сервера
+            updateSetting('directory', this.value);
+        }
+    });
 
     // Initialize theme and other components
     document.addEventListener('DOMContentLoaded', function() {
         loadTheme(); // Загружаем тему первой
         setupThemeListener(); // Настраиваем отслеживание системной темы
+        loadClearHistorySetting(); // Загружаем настройку очистки истории
+        loadAllSettings(); // Загружаем все настройки
 
         const extractAudio = document.getElementById('extractAudio');
         const audioOptions = document.getElementById('audioOptions');
         audioOptions.style.display = extractAudio.checked ? 'flex' : 'none';
         updateSubmitButton();
+
 
         // Запускаем загрузку версии и списка загрузок
         loadYtDlpVersion();

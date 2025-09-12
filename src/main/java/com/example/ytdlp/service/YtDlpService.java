@@ -54,7 +54,31 @@ public class YtDlpService {
 
     @PostConstruct
     public void init() {
-        loadDownloadHistory();
+        // Загружаем конфигурацию при старте
+        appConfig.loadConfig();
+
+        if (appConfig.isClearHistoryOnStartup()) {
+            clearDownloadHistory();
+            log.info("Download history cleared on startup as configured");
+        } else {
+            loadDownloadHistory();
+        }
+    }
+
+    private boolean shouldClearHistoryOnStartup() {
+        try {
+            Path configPath = Paths.get("application-custom.properties");
+            if (Files.exists(configPath)) {
+                Properties props = new Properties();
+                try (InputStream input = Files.newInputStream(configPath)) {
+                    props.load(input);
+                    return Boolean.parseBoolean(props.getProperty("app.download.clear-history-on-startup", "false"));
+                }
+            }
+        } catch (IOException e) {
+            log.error("Error reading clear history setting: {}", e.getMessage());
+        }
+        return false;
     }
 
     // Метод для загрузки истории из файла
@@ -203,7 +227,7 @@ public class YtDlpService {
             // Сохраняем выбранную директорию в настройки
             if (appConfig.isRememberLastDirectory()) {
                 appConfig.setDirectory(targetDirectory);
-                saveAppConfig();
+                saveDirectoryConfig(targetDirectory);
             }
 
             // Проверяем существование yt-dlp.exe
@@ -404,19 +428,35 @@ public class YtDlpService {
         return String.format("%.1f %sB", bytes / Math.pow(1024, exp), pre);
     }
 
-    private void saveAppConfig() {
-        try {
-            Properties props = new Properties();
-            props.setProperty("app.download.directory", appConfig.getDirectory());
-            props.setProperty("app.download.remember-last-directory",
-                    String.valueOf(appConfig.isRememberLastDirectory()));
+    private void saveDirectoryConfig(String directory) {
+        if (appConfig.isRememberLastDirectory()) {
+            appConfig.setDirectory(directory);
+            appConfig.updateConfig("directory", directory);
+        }
+    }
 
+    private void loadAppConfig() {
+        try {
             Path configPath = Paths.get("application-custom.properties");
-            try (OutputStream output = Files.newOutputStream(configPath)) {
-                props.store(output, "Custom application properties");
+            if (Files.exists(configPath)) {
+                Properties props = new Properties();
+                try (InputStream input = Files.newInputStream(configPath)) {
+                    props.load(input);
+
+                    // Загружаем другие настройки если нужно
+                    String directory = props.getProperty("app.download.directory");
+                    if (directory != null) {
+                        appConfig.setDirectory(directory);
+                    }
+
+                    String rememberLastDir = props.getProperty("app.download.remember-last-directory");
+                    if (rememberLastDir != null) {
+                        appConfig.setRememberLastDirectory(Boolean.parseBoolean(rememberLastDir));
+                    }
+                }
             }
         } catch (IOException e) {
-            log.error("Error saving app config: {}", e.getMessage(), e);
+            log.error("Error loading app config: {}", e.getMessage());
         }
     }
 

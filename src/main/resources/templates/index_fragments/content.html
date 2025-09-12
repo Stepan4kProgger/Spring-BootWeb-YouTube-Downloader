@@ -58,59 +58,102 @@
                 <div class="form-text">Поддерживаются: YouTube, Vimeo, Twitter и другие</div>
               </div>
 
-              <!-- Download Directory Input -->
-              <div class="mb-2">
-                <label for="downloadDirectory" class="form-label fw-bold required-field">
-                  Путь для загрузки
-                </label>
-                <div class="input-group input-group-sm">
-                  <input type="text" class="form-control" id="downloadDirectory"
-                         name="downloadDirectory" th:value="${selectedDirectory}"
-                         placeholder="Выберите папку для загрузки" required>
-                  <button type="button" class="btn btn-outline-secondary"
-                          onclick="openDirectoryBrowser()">
-                    <i class="fas fa-folder-open"></i>
-                  </button>
-                </div>
-              </div>
+              <!-- Настройки (аккордеон) -->
+              <div class="accordion mb-2" id="settingsAccordion">
+                <div class="accordion-item">
+                  <h2 class="accordion-header" id="settingsHeading">
+                    <button class="accordion-button collapsed py-2" type="button"
+                            data-bs-toggle="collapse" data-bs-target="#settingsCollapse"
+                            aria-expanded="false" aria-controls="settingsCollapse">
+                      <i class="fas fa-cog me-2"></i>Настройки
+                    </button>
+                  </h2>
+                  <div id="settingsCollapse" class="accordion-collapse collapse"
+                       aria-labelledby="settingsHeading" data-bs-parent="#settingsAccordion">
+                    <div class="accordion-body p-2">
 
-              <!-- Format Options -->
-              <div class="mb-2">
-                <label for="format" class="form-label fw-bold">Формат</label>
-                <select class="form-select form-select-sm" id="format" name="format">
-                  <option value="best">Наилучшее качество</option>
-                  <option value="worst">Наихудшее качество</option>
-                </select>
-              </div>
+                      <!-- Download Directory Input -->
+                      <div class="mb-2">
+                        <label for="downloadDirectory" class="form-label fw-bold required-field">
+                          Путь для загрузки
+                        </label>
+                        <div class="input-group input-group-sm">
+                          <input type="text" class="form-control" id="downloadDirectory"
+                                 name="downloadDirectory" th:value="${selectedDirectory}"
+                                 placeholder="Выберите папку для загрузки" required>
+                          <button type="button" class="btn btn-outline-secondary"
+                                  onclick="openDirectoryBrowser()">
+                            <i class="fas fa-folder-open"></i>
+                          </button>
+                        </div>
+                      </div>
 
-              <!-- Audio Options -->
-              <div class="mb-2">
-                <div class="form-check form-switch mb-1">
-                  <input class="form-check-input" type="checkbox"
-                         id="extractAudio" name="extractAudio" value="true">
-                  <label class="form-check-label fw-bold" for="extractAudio">
-                    Только аудио
-                  </label>
-                </div>
+                      <!-- Remember directory option -->
+                      <div class="mb-2">
+                        <div class="form-check form-switch">
+                          <input class="form-check-input" type="checkbox"
+                                 id="rememberLastDirectory" name="rememberLastDirectory" checked
+                                 onchange="toggleRememberDirectory(this.checked)">
+                          <label class="form-check-label fw-bold" for="rememberLastDirectory">
+                            Запоминать последнюю директорию
+                          </label>
+                        </div>
+                      </div>
 
-                <div id="audioOptions" class="row ms-3" style="display: none;">
-                  <div class="col-md-6">
-                    <label for="audioFormat" class="form-label">Формат аудио</label>
-                    <select class="form-select form-select-sm" id="audioFormat" name="audioFormat">
-                      <option value="mp3">MP3</option>
-                      <option value="m4a">M4A</option>
-                      <option value="wav">WAV</option>
-                      <option value="ogg">OGG</option>
-                    </select>
-                  </div>
-                  <div class="col-md-6">
-                    <label for="quality" class="form-label">Качество (kbps)</label>
-                    <select class="form-select form-select-sm" id="quality" name="quality">
-                      <option value="128">128 kbps</option>
-                      <option value="192">192 kbps</option>
-                      <option value="256">256 kbps</option>
-                      <option value="320">320 kbps</option>
-                    </select>
+                      <!-- Clear history on startup option -->
+                      <div class="mb-2">
+                        <div class="form-check form-switch">
+                          <input class="form-check-input" type="checkbox"
+                                 id="clearHistoryOnStartup" name="clearHistoryOnStartup">
+                          <label class="form-check-label fw-bold" for="clearHistoryOnStartup">
+                            Очищать историю при запуске
+                          </label>
+                        </div>
+                        <div class="form-text">При включении история загрузок будет очищаться при каждом запуске приложения</div>
+                      </div>
+
+                      <!-- Format Options -->
+                      <div class="mb-2">
+                        <label for="format" class="form-label fw-bold">Формат</label>
+                        <select class="form-select form-select-sm" id="format" name="format">
+                          <option value="best">Наилучшее качество</option>
+                          <option value="worst">Наихудшее качество</option>
+                        </select>
+                      </div>
+
+                      <!-- Audio Options -->
+                      <div class="mb-2">
+                        <div class="form-check form-switch mb-1">
+                          <input class="form-check-input" type="checkbox"
+                                 id="extractAudio" name="extractAudio" value="true">
+                          <label class="form-check-label fw-bold" for="extractAudio">
+                            Только аудио
+                          </label>
+                        </div>
+
+                        <div id="audioOptions" class="row ms-3" style="display: none;">
+                          <div class="col-md-6">
+                            <label for="audioFormat" class="form-label">Формат аудио</label>
+                            <select class="form-select form-select-sm" id="audioFormat" name="audioFormat">
+                              <option value="mp3">MP3</option>
+                              <option value="m4a">M4A</option>
+                              <option value="wav">WAV</option>
+                              <option value="ogg">OGG</option>
+                            </select>
+                          </div>
+                          <div class="col-md-6">
+                            <label for="quality" class="form-label">Качество (kbps)</label>
+                            <select class="form-select form-select-sm" id="quality" name="quality">
+                              <option value="128">128 kbps</option>
+                              <option value="192">192 kbps</option>
+                              <option value="256">256 kbps</option>
+                              <option value="320">320 kbps</option>
+                            </select>
+                          </div>
+                        </div>
+                      </div>
+
+                    </div>
                   </div>
                 </div>
               </div>
@@ -133,8 +176,7 @@
             </h5>
             <ul class="list-unstyled mb-0">
               <li class="mb-1"><i class="fas fa-check text-success me-1"></i>Вставьте ссылку на видео</li>
-              <li class="mb-1"><i class="fas fa-check text-success me-1"></i>Выберите папку для загрузки</li>
-              <li class="mb-1"><i class="fas fa-check text-success me-1"></i>Выберите формат и настройки</li>
+              <li class="mb-1"><i class="fas fa-check text-success me-1"></i>Нажмите "Настройки" для выбора папки и формата</li>
               <li class="mb-1"><i class="fas fa-check text-success me-1"></i>Нажмите Скачать</li>
               <li class="mb-1"><i class="fas fa-check text-success me-1"></i>Кликните на завершённую загрузку для открытия в проводнике</li>
             </ul>

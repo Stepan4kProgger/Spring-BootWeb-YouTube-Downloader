@@ -15,8 +15,12 @@ import org.springframework.web.bind.annotation.*;
 import org.springframework.web.servlet.mvc.support.RedirectAttributes;
 
 import java.io.File;
+import java.io.OutputStream;
 import java.net.URLDecoder;
 import java.nio.charset.StandardCharsets;
+import java.nio.file.Files;
+import java.nio.file.Path;
+import java.nio.file.Paths;
 import java.time.LocalDateTime;
 import java.util.*;
 
@@ -213,6 +217,55 @@ public class WebController {
         } catch (Exception e) {
             return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR)
                     .body("Error during shutdown: " + e.getMessage());
+        }
+    }
+
+    @PostMapping("/settings/clear-history-on-startup")
+    @ResponseBody
+    public ResponseEntity<String> setClearHistoryOnStartup(@RequestParam boolean enabled) {
+        try {
+            // Сохраняем настройку в properties файл или базу данных
+            Properties props = new Properties();
+            props.setProperty("app.download.clear-history-on-startup", String.valueOf(enabled));
+
+            Path configPath = Paths.get("application-custom.properties");
+            try (OutputStream output = Files.newOutputStream(configPath)) {
+                props.store(output, "Custom application properties");
+            }
+
+            return ResponseEntity.ok("Настройка сохранена");
+        } catch (Exception e) {
+            return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR)
+                    .body("Ошибка сохранения настройки: " + e.getMessage());
+        }
+    }
+
+    @PostMapping("/settings/update")
+    @ResponseBody
+    public ResponseEntity<String> updateSetting(
+            @RequestParam String key,
+            @RequestParam String value) {
+        try {
+            appConfig.updateConfig(key, value);
+            return ResponseEntity.ok("Настройка сохранена");
+        } catch (Exception e) {
+            return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR)
+                    .body("Ошибка сохранения настройки: " + e.getMessage());
+        }
+    }
+
+    @GetMapping("/settings")
+    @ResponseBody
+    public ResponseEntity<Map<String, String>> getSettings() {
+        try {
+            Map<String, String> settings = new HashMap<>();
+            settings.put("directory", appConfig.getDirectory());
+            settings.put("rememberLastDirectory", String.valueOf(appConfig.isRememberLastDirectory()));
+            settings.put("clearHistoryOnStartup", String.valueOf(appConfig.isClearHistoryOnStartup()));
+
+            return ResponseEntity.ok(settings);
+        } catch (Exception e) {
+            return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR).build();
         }
     }
 }
