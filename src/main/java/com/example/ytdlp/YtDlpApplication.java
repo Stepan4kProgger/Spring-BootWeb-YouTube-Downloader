@@ -1,7 +1,6 @@
 package com.example.ytdlp;
 
 import com.example.ytdlp.utils.tray.TrayManager;
-import org.springframework.beans.factory.annotation.Value;
 import org.springframework.boot.SpringApplication;
 import org.springframework.boot.autoconfigure.SpringBootApplication;
 import org.springframework.context.ConfigurableApplicationContext;
@@ -33,4 +32,5 @@ public class YtDlpApplication {
         // Добавляем обработчик завершения приложения
         Runtime.getRuntime().addShutdownHook(new Thread(trayManager::removeTrayIcon));
     }
+
 }
