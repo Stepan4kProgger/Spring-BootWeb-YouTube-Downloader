@@ -85,7 +85,7 @@ public class TrayManager {
         return popup;
     }
 
-    public void openWebInterface() {
+    public static void openWebInterface() {
         try {
             if (Desktop.isDesktopSupported() && Desktop.getDesktop().isSupported(Desktop.Action.BROWSE)) {
                 Desktop.getDesktop().browse(new URI("http://localhost:8080/yt-dlp/"));
@@ -97,7 +97,7 @@ public class TrayManager {
         }
     }
 
-    private void openFallbackBrowser() {
+    private static void openFallbackBrowser() {
         try {
             String os = System.getProperty("os.name").toLowerCase();
             String command;
@@ -112,8 +112,9 @@ public class TrayManager {
                 log.warn("Unsupported OS for browser fallback");
                 return;
             }
-
-            Runtime.getRuntime().exec(command);
+            //Runtime.getRuntime().exec(command);
+            ProcessBuilder pb = new ProcessBuilder(command);
+            pb.start();
         } catch (Exception e) {
             log.error("Error opening browser fallback", e);
         }
