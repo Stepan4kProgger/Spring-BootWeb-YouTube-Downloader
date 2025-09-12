@@ -1,0 +1,171 @@
+<!DOCTYPE html>
+<html xmlns:th="http://www.thymeleaf.org">
+<body>
+<div th:fragment="content">
+  <div class="theme-switcher">
+    <div class="btn-group btn-group-sm btn-group-compact">
+      <button class="btn btn-outline-secondary" onclick="setTheme('light')" title="Светлая тема">
+        <i class="fas fa-sun"></i>
+      </button>
+      <button class="btn btn-outline-secondary" onclick="setTheme('dark')" title="Тёмная тема">
+        <i class="fas fa-moon"></i>
+      </button>
+      <button class="btn btn-outline-secondary active" onclick="setTheme('auto')" title="Системная тема">
+        <i class="fas fa-desktop"></i>
+      </button>
+    </div>
+  </div>
+
+  <div class="container compact-container py-2">
+    <!-- Header -->
+    <div class="text-center mb-3">
+      <h1 class="display-4 text-primary mb-1">
+        <i class="fab fa-youtube me-1"></i>YT-DLP Downloader
+      </h1>
+      <p class="lead text-muted mb-1">Скачивайте видео и аудио с различных платформ</p>
+      <small class="text-muted">Версия yt-dlp.exe:
+        <span id="versionText" class="version-loading" th:text="${version}">Загрузка...</span>
+      </small>
+    </div>
+
+    <!-- Alerts -->
+    <div th:if="${successMessage}" class="alert alert-success alert-dismissible fade show mb-2" role="alert">
+      <i class="fas fa-check-circle me-1"></i>
+      <span th:text="${successMessage}"></span>
+      <button type="button" class="btn-close" data-bs-dismiss="alert"></button>
+    </div>
+
+    <div th:if="${errorMessage}" class="alert alert-danger alert-dismissible fade show mb-2" role="alert">
+      <i class="fas fa-exclamation-circle me-1"></i>
+      <span th:text="${errorMessage}"></span>
+      <button type="button" class="btn-close" data-bs-dismiss="alert"></button>
+    </div>
+
+    <div class="row compact-row">
+      <!-- Основная форма -->
+      <div class="col-lg-8 compact-col">
+        <!-- Download Form -->
+        <div class="card mb-2">
+          <div class="card-body p-2">
+            <form id="downloadForm" action="/yt-dlp/download" method="post">
+              <!-- URL Input -->
+              <div class="mb-2">
+                <label for="url" class="form-label fw-bold required-field" style="font-size: 1.1rem;">Ссылка на видео</label>
+                <input type="url" class="form-control form-control-lg"
+                       id="url" name="url"
+                       placeholder="https://www.youtube.com/watch?v=..." required
+                       style="font-size: 1.1rem; padding: 0.75rem;">
+                <div class="form-text">Поддерживаются: YouTube, Vimeo, Twitter и другие</div>
+              </div>
+
+              <!-- Download Directory Input -->
+              <div class="mb-2">
+                <label for="downloadDirectory" class="form-label fw-bold required-field">
+                  Путь для загрузки
+                </label>
+                <div class="input-group input-group-sm">
+                  <input type="text" class="form-control" id="downloadDirectory"
+                         name="downloadDirectory" th:value="${selectedDirectory}"
+                         placeholder="Выберите папку для загрузки" required>
+                  <button type="button" class="btn btn-outline-secondary"
+                          onclick="openDirectoryBrowser()">
+                    <i class="fas fa-folder-open"></i>
+                  </button>
+                </div>
+              </div>
+
+              <!-- Format Options -->
+              <div class="mb-2">
+                <label for="format" class="form-label fw-bold">Формат</label>
+                <select class="form-select form-select-sm" id="format" name="format">
+                  <option value="best">Наилучшее качество</option>
+                  <option value="worst">Наихудшее качество</option>
+                </select>
+              </div>
+
+              <!-- Audio Options -->
+              <div class="mb-2">
+                <div class="form-check form-switch mb-1">
+                  <input class="form-check-input" type="checkbox"
+                         id="extractAudio" name="extractAudio" value="true">
+                  <label class="form-check-label fw-bold" for="extractAudio">
+                    Только аудио
+                  </label>
+                </div>
+
+                <div id="audioOptions" class="row ms-3" style="display: none;">
+                  <div class="col-md-6">
+                    <label for="audioFormat" class="form-label">Формат аудио</label>
+                    <select class="form-select form-select-sm" id="audioFormat" name="audioFormat">
+                      <option value="mp3">MP3</option>
+                      <option value="m4a">M4A</option>
+                      <option value="wav">WAV</option>
+                      <option value="ogg">OGG</option>
+                    </select>
+                  </div>
+                  <div class="col-md-6">
+                    <label for="quality" class="form-label">Качество (kbps)</label>
+                    <select class="form-select form-select-sm" id="quality" name="quality">
+                      <option value="128">128 kbps</option>
+                      <option value="192">192 kbps</option>
+                      <option value="256">256 kbps</option>
+                      <option value="320">320 kbps</option>
+                    </select>
+                  </div>
+                </div>
+              </div>
+
+              <!-- Submit Button -->
+              <div class="text-center">
+                <button type="submit" class="btn btn-primary btn-sm" id="submitButton" disabled>
+                  <i class="fas fa-download me-1"></i>Скачать
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+
+        <!-- Instructions -->
+        <div class="card">
+          <div class="card-body p-2">
+            <h5 class="card-title mb-1">
+              <i class="fas fa-info-circle me-1 text-primary"></i>Как использовать
+            </h5>
+            <ul class="list-unstyled mb-0">
+              <li class="mb-1"><i class="fas fa-check text-success me-1"></i>Вставьте ссылку на видео</li>
+              <li class="mb-1"><i class="fas fa-check text-success me-1"></i>Выберите папку для загрузки</li>
+              <li class="mb-1"><i class="fas fa-check text-success me-1"></i>Выберите формат и настройки</li>
+              <li class="mb-1"><i class="fas fa-check text-success me-1"></i>Нажмите Скачать</li>
+              <li class="mb-1"><i class="fas fa-check text-success me-1"></i>Кликните на завершённую загрузку для открытия в проводнике</li>
+            </ul>
+          </div>
+        </div>
+      </div>
+
+      <!-- Объединённый раздел Загрузок -->
+      <div class="col-lg-4 compact-col">
+        <div class="card downloads-panel">
+          <div class="card-header downloads-header d-flex justify-content-between align-items-center py-1">
+            <h5 class="mb-0">
+              <i class="fas fa-download me-1"></i>
+              Загрузки
+            </h5>
+            <button class="btn btn-sm btn-outline-light" onclick="clearDownloads()" title="Очистить историю загрузок">
+              <i class="fas fa-trash"></i>
+            </button>
+          </div>
+          <div class="card-body p-0">
+            <div id="downloadsList" class="list-group list-group-flush downloads-list">
+              <div class="list-group-item text-center text-muted py-3">
+                <i class="fas fa-cloud-download-alt fa-2x mb-1"></i>
+                <p class="mb-0">Загрузка данных...</p>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+</body>
+</html>
