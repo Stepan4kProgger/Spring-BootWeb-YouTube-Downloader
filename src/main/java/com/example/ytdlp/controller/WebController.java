@@ -220,26 +220,6 @@ public class WebController {
         }
     }
 
-    @PostMapping("/settings/clear-history-on-startup")
-    @ResponseBody
-    public ResponseEntity<String> setClearHistoryOnStartup(@RequestParam boolean enabled) {
-        try {
-            // Сохраняем настройку в properties файл или базу данных
-            Properties props = new Properties();
-            props.setProperty("app.download.clear-history-on-startup", String.valueOf(enabled));
-
-            Path configPath = Paths.get("application-custom.properties");
-            try (OutputStream output = Files.newOutputStream(configPath)) {
-                props.store(output, "Custom application properties");
-            }
-
-            return ResponseEntity.ok("Настройка сохранена");
-        } catch (Exception e) {
-            return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR)
-                    .body("Ошибка сохранения настройки: " + e.getMessage());
-        }
-    }
-
     @PostMapping("/settings/update")
     @ResponseBody
     public ResponseEntity<String> updateSetting(
@@ -262,6 +242,7 @@ public class WebController {
             settings.put("directory", appConfig.getDirectory());
             settings.put("rememberLastDirectory", String.valueOf(appConfig.isRememberLastDirectory()));
             settings.put("clearHistoryOnStartup", String.valueOf(appConfig.isClearHistoryOnStartup()));
+            settings.put("quality", appConfig.getQuality());
 
             return ResponseEntity.ok(settings);
         } catch (Exception e) {

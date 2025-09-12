@@ -85,7 +85,7 @@ public class TrayManager {
         return popup;
     }
 
-    private void openWebInterface() {
+    public void openWebInterface() {
         try {
             if (Desktop.isDesktopSupported() && Desktop.getDesktop().isSupported(Desktop.Action.BROWSE)) {
                 Desktop.getDesktop().browse(new URI("http://localhost:8080/yt-dlp/"));
@@ -123,7 +123,6 @@ public class TrayManager {
         if (!confirmShutdown()) return;
 
         try {
-            notifyShutdownStart();
             performGracefulShutdown();
         } catch (Exception e) {
             handleShutdownError(e);
@@ -138,16 +137,6 @@ public class TrayManager {
                 JOptionPane.YES_NO_OPTION,
                 JOptionPane.QUESTION_MESSAGE
         );
-    }
-
-    private void notifyShutdownStart() {
-        if (trayIcon != null) {
-            trayIcon.displayMessage(
-                    "YT-DLP Downloader",
-                    "Завершение работы... Останавливаем загрузки",
-                    TrayIcon.MessageType.INFO
-            );
-        }
     }
 
     private void performGracefulShutdown() throws Exception {

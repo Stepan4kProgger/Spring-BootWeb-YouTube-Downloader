@@ -22,6 +22,7 @@ public class ApplicationConfig {
     private String directory = "D:/downloads";
     private boolean rememberLastDirectory = true;
     private boolean clearHistoryOnStartup = false;
+    private String quality = "best";
 
     private static final String CONFIG_FILE = "yt-dlp-config.cfg";
 
@@ -52,6 +53,7 @@ public class ApplicationConfig {
                     props.getProperty("rememberLastDirectory", "true"));
             this.clearHistoryOnStartup = Boolean.parseBoolean(
                     props.getProperty("clearHistoryOnStartup", "false"));
+            this.quality = props.getProperty("quality", "best"); // Загружаем качество
 
         } catch (IOException e) {
             // Файл не существует, используем значения по умолчанию
@@ -65,6 +67,7 @@ public class ApplicationConfig {
         props.setProperty("directory", this.directory);
         props.setProperty("rememberLastDirectory", String.valueOf(this.rememberLastDirectory));
         props.setProperty("clearHistoryOnStartup", String.valueOf(this.clearHistoryOnStartup));
+        props.setProperty("quality", this.quality); // Сохраняем качество
 
         try (FileOutputStream output = new FileOutputStream(CONFIG_FILE)) {
             props.store(output, "YT-DLP Configuration");
@@ -100,6 +103,9 @@ public class ApplicationConfig {
                 break;
             case "clearHistoryOnStartup":
                 this.clearHistoryOnStartup = Boolean.parseBoolean(value);
+                break;
+            case "quality":
+                this.quality = value;
                 break;
         }
     }

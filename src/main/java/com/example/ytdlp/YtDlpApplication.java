@@ -17,6 +17,9 @@ public class YtDlpApplication {
         // Инициализируем системный трей
         TrayManager trayManager = context.getBean(TrayManager.class);
 
+        // Открываем веб-страницу
+        trayManager.openWebInterface();
+
         // Добавляем обработчик завершения приложения
         Runtime.getRuntime().addShutdownHook(new Thread(trayManager::removeTrayIcon));
     }

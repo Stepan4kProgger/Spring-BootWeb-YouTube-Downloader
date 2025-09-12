@@ -114,45 +114,12 @@
 
                       <!-- Format Options -->
                       <div class="mb-2">
-                        <label for="format" class="form-label fw-bold">Формат</label>
-                        <select class="form-select form-select-sm" id="format" name="format">
-                          <option value="best">Наилучшее качество</option>
-                          <option value="worst">Наихудшее качество</option>
+                        <label for="quality" class="form-label fw-bold">Качество видео</label>
+                        <select class="form-select form-select-sm" id="quality" name="quality">
+                          <option value="best">Лучшее доступное</option>
+                          <option value="worst">Худшее доступное</option>
                         </select>
                       </div>
-
-                      <!-- Audio Options -->
-                      <div class="mb-2">
-                        <div class="form-check form-switch mb-1">
-                          <input class="form-check-input" type="checkbox"
-                                 id="extractAudio" name="extractAudio" value="true">
-                          <label class="form-check-label fw-bold" for="extractAudio">
-                            Только аудио
-                          </label>
-                        </div>
-
-                        <div id="audioOptions" class="row ms-3" style="display: none;">
-                          <div class="col-md-6">
-                            <label for="audioFormat" class="form-label">Формат аудио</label>
-                            <select class="form-select form-select-sm" id="audioFormat" name="audioFormat">
-                              <option value="mp3">MP3</option>
-                              <option value="m4a">M4A</option>
-                              <option value="wav">WAV</option>
-                              <option value="ogg">OGG</option>
-                            </select>
-                          </div>
-                          <div class="col-md-6">
-                            <label for="quality" class="form-label">Качество (kbps)</label>
-                            <select class="form-select form-select-sm" id="quality" name="quality">
-                              <option value="128">128 kbps</option>
-                              <option value="192">192 kbps</option>
-                              <option value="256">256 kbps</option>
-                              <option value="320">320 kbps</option>
-                            </select>
-                          </div>
-                        </div>
-                      </div>
-
                     </div>
                   </div>
                 </div>

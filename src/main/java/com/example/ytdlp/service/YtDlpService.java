@@ -382,19 +382,6 @@ public class YtDlpService {
         command.add("-o");
         command.add(Paths.get(targetDirectory, "%(title)s.%(ext)s").toString());
 
-        if (Boolean.TRUE.equals(request.getExtractAudio())) {
-            command.add("--extract-audio");
-            if (request.getAudioFormat() != null) {
-                command.add("--audio-format");
-                command.add(request.getAudioFormat());
-            }
-        }
-
-        if (request.getQuality() != null) {
-            command.add("--audio-quality");
-            command.add(request.getQuality() + "K");
-        }
-
         // Добавляем полезные флаги
         command.add("--no-playlist");
         command.add("--newline");
