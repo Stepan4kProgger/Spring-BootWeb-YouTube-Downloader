@@ -513,6 +513,38 @@
             });
     }
 
+    // Улучшенная функция вставки с проверкой URL
+    function pasteFromClipboard() {
+        navigator.clipboard.readText()
+            .then(text => {
+                const urlInput = document.getElementById('url');
+                if (urlInput) {
+                    // Базовая проверка на URL
+                    if (text.trim() && looksLikeUrl(text)) {
+                        urlInput.value = text;
+                        showNotification('URL из буфера обмена вставлен', 'success');
+                    } else {
+                        urlInput.value = text;
+                        showNotification('Текст из буфера обмена вставлен', 'info');
+                    }
+                    urlInput.focus();
+                    updateSubmitButton();
+                }
+            })
+            .catch(err => {
+                console.error('Ошибка при чтении из буфера:', err);
+                showNotification('Не удалось прочитать буфер обмена', 'error');
+            });
+    }
+
+    // Простая проверка, похож ли текст на URL
+    function looksLikeUrl(text) {
+        return text.includes('://') ||
+               text.startsWith('http://') ||
+               text.startsWith('https://') ||
+               text.startsWith('www.');
+    }
+
     // Функция для обновления настройки
     function updateSetting(key, value) {
         fetch('/yt-dlp/settings/update', {
@@ -565,6 +597,28 @@
             .catch(error => {
                 console.log('No saved directory found or error:', error);
             });
+
+        // Обработчик клика по кнопке вставки
+        const pasteButton = document.getElementById('pasteButton');
+        if (pasteButton) {
+            pasteButton.addEventListener('click', pasteFromClipboard);
+        }
+
+        // Горячая клавиша Ctrl+V для поля ввода
+        const urlInput = document.getElementById('url');
+        if (urlInput) {
+            urlInput.addEventListener('keydown', function(e) {
+                if (e.ctrlKey && e.key === 'v') {
+                    setTimeout(updateSubmitButton, 100);
+                }
+            });
+
+            // Обновляем при обычной вставке
+            urlInput.addEventListener('input', updateSubmitButton);
+            urlInput.addEventListener('paste', function() {
+                setTimeout(updateSubmitButton, 100);
+            });
+        }
     });
 
     // Auto-hide alerts after 5 seconds

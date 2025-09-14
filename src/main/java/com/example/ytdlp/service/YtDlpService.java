@@ -54,7 +54,6 @@ public class YtDlpService {
 
     @PostConstruct
     public void init() {
-        // Загружаем конфигурацию при старте
         appConfig.loadConfig();
 
         if (appConfig.isClearHistoryOnStartup()) {
@@ -63,22 +62,6 @@ public class YtDlpService {
         } else {
             loadDownloadHistory();
         }
-    }
-
-    private boolean shouldClearHistoryOnStartup() {
-        try {
-            Path configPath = Paths.get("application-custom.properties");
-            if (Files.exists(configPath)) {
-                Properties props = new Properties();
-                try (InputStream input = Files.newInputStream(configPath)) {
-                    props.load(input);
-                    return Boolean.parseBoolean(props.getProperty("app.download.clear-history-on-startup", "false"));
-                }
-            }
-        } catch (IOException e) {
-            log.error("Error reading clear history setting: {}", e.getMessage());
-        }
-        return false;
     }
 
     // Метод для загрузки истории из файла
@@ -419,31 +402,6 @@ public class YtDlpService {
         if (appConfig.isRememberLastDirectory()) {
             appConfig.setDirectory(directory);
             appConfig.updateConfig("directory", directory);
-        }
-    }
-
-    private void loadAppConfig() {
-        try {
-            Path configPath = Paths.get("application-custom.properties");
-            if (Files.exists(configPath)) {
-                Properties props = new Properties();
-                try (InputStream input = Files.newInputStream(configPath)) {
-                    props.load(input);
-
-                    // Загружаем другие настройки если нужно
-                    String directory = props.getProperty("app.download.directory");
-                    if (directory != null) {
-                        appConfig.setDirectory(directory);
-                    }
-
-                    String rememberLastDir = props.getProperty("app.download.remember-last-directory");
-                    if (rememberLastDir != null) {
-                        appConfig.setRememberLastDirectory(Boolean.parseBoolean(rememberLastDir));
-                    }
-                }
-            }
-        } catch (IOException e) {
-            log.error("Error loading app config: {}", e.getMessage());
         }
     }
 
