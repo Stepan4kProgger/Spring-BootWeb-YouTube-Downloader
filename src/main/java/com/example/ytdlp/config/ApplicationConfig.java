@@ -1,6 +1,7 @@
 package com.example.ytdlp.config;
 
 import lombok.Data;
+import lombok.extern.slf4j.Slf4j;
 import org.springframework.boot.context.properties.ConfigurationProperties;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
@@ -14,6 +15,7 @@ import java.io.IOException;
 import java.util.Properties;
 import java.util.concurrent.Executor;
 
+@Slf4j
 @Data
 @Configuration
 @EnableAsync
@@ -53,7 +55,7 @@ public class ApplicationConfig {
                     props.getProperty("rememberLastDirectory", "true"));
             this.clearHistoryOnStartup = Boolean.parseBoolean(
                     props.getProperty("clearHistoryOnStartup", "false"));
-            this.quality = props.getProperty("quality", "best"); // Загружаем качество
+            this.quality = props.getProperty("quality", "worst"); // Загружаем качество
 
         } catch (IOException e) {
             // Файл не существует, используем значения по умолчанию
@@ -67,10 +69,11 @@ public class ApplicationConfig {
         props.setProperty("directory", this.directory);
         props.setProperty("rememberLastDirectory", String.valueOf(this.rememberLastDirectory));
         props.setProperty("clearHistoryOnStartup", String.valueOf(this.clearHistoryOnStartup));
-        props.setProperty("quality", this.quality); // Сохраняем качество
+        props.setProperty("quality", this.quality);
 
         try (FileOutputStream output = new FileOutputStream(CONFIG_FILE)) {
             props.store(output, "YT-DLP Configuration");
+            log.info("Configuration saved successfully");
         } catch (IOException e) {
             throw new RuntimeException("Failed to save configuration", e);
         }

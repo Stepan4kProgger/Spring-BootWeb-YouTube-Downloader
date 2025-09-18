@@ -207,11 +207,11 @@ public class YtDlpService {
                 targetDirectory = appConfig.getDirectory();
             }
 
-            // Сохраняем выбранную директорию в настройки
             if (appConfig.isRememberLastDirectory()) {
                 appConfig.setDirectory(targetDirectory);
-                saveDirectoryConfig(targetDirectory);
             }
+            // Сохраняем все настройки конфигурации
+            appConfig.saveConfig();
 
             // Проверяем существование yt-dlp.exe
             Path ytDlp = Paths.get(ytDlpPath);
@@ -396,13 +396,6 @@ public class YtDlpService {
         int exp = (int) (Math.log(bytes) / Math.log(1024));
         String pre = "KMGTPE".charAt(exp-1) + "";
         return String.format("%.1f %sB", bytes / Math.pow(1024, exp), pre);
-    }
-
-    private void saveDirectoryConfig(String directory) {
-        if (appConfig.isRememberLastDirectory()) {
-            appConfig.setDirectory(directory);
-            appConfig.updateConfig("directory", directory);
-        }
     }
 
     // Вспомогательные методы для парсинга
