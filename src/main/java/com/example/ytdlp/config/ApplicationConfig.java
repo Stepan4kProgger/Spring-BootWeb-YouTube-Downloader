@@ -24,7 +24,7 @@ public class ApplicationConfig {
     private String directory = "D:/downloads";
     private boolean rememberLastDirectory = true;
     private boolean clearHistoryOnStartup = false;
-    private String quality = "best";
+    private String quality = "worst";
 
     private static final String CONFIG_FILE = "yt-dlp-config.cfg";
 
@@ -55,7 +55,7 @@ public class ApplicationConfig {
                     props.getProperty("rememberLastDirectory", "true"));
             this.clearHistoryOnStartup = Boolean.parseBoolean(
                     props.getProperty("clearHistoryOnStartup", "false"));
-            this.quality = props.getProperty("quality", "worst"); // Загружаем качество
+            this.quality = props.getProperty("quality", "worst");
 
         } catch (IOException e) {
             // Файл не существует, используем значения по умолчанию

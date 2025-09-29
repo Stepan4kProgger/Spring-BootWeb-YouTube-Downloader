@@ -14,4 +14,5 @@ public class DownloadRequest {
 
     private String downloadDirectory;
     private String format;
+    private String cookies;
 }

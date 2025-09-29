@@ -194,23 +194,43 @@ public class YtDlpService {
         progress.setStatus("downloading");
         progress.setProgress(0);
         progress.setStartTime(LocalDateTime.now());
+
+        if (request.getDownloadDirectory() == null || request.getDownloadDirectory().trim().isEmpty()){
+            request.setDownloadDirectory(appConfig.getDirectory());
+        }
         progress.setDownloadDirectory(request.getDownloadDirectory());
 
         activeDownloads.put(downloadId, progress);
-        log.info("Starting download: {} -> {}", request.getUrl(), request.getDownloadDirectory());
+
+        // Улучшенное логирование
+        log.info("=== Starting Download ===");
+        log.info("Download ID: {}", downloadId);
+        log.info("URL: {}", request.getUrl());
+        log.info("Directory: {}", request.getDownloadDirectory());
+        log.info("Format: {}", request.getFormat());
+        log.info("Cookies provided: {}", request.getCookies() != null && !request.getCookies().isEmpty());
+
+        if (request.getCookies() != null && !request.getCookies().isEmpty()) {
+            log.info("Cookies length: {}", request.getCookies().length());
+            // Логируем количество куки-пар
+            String[] cookiePairs = request.getCookies().split(";");
+            log.info("Number of cookie pairs: {}", cookiePairs.length);
+        }
 
         try {
             String targetDirectory = request.getDownloadDirectory();
 
-            // Если директория не указана, используем сохраненную
-            if (targetDirectory == null || targetDirectory.trim().isEmpty()) {
-                targetDirectory = appConfig.getDirectory();
-            }
-
             if (appConfig.isRememberLastDirectory()) {
                 appConfig.setDirectory(targetDirectory);
             }
-            // Сохраняем все настройки конфигурации
+
+            if (request.getFormat() != null && !request.getFormat().isEmpty()) {
+                appConfig.setQuality(request.getFormat());
+                appConfig.updateConfig("quality", request.getFormat());
+            } else {
+                request.setFormat(appConfig.getQuality());
+            }
+
             appConfig.saveConfig();
 
             // Проверяем существование yt-dlp.exe
@@ -233,11 +253,11 @@ public class YtDlpService {
 
             // Формируем команду для выполнения
             List<String> command = buildCommand(request, ytDlpPath, targetDirectory);
-            log.info("Executing command: {}", command);
+            log.info("Executing command with {} arguments", command.size());
 
             ProcessBuilder processBuilder = new ProcessBuilder(command);
             processBuilder.redirectErrorStream(true);
-            processBuilder.directory(downloadDir.toFile()); // Устанавливаем рабочую директорию
+            processBuilder.directory(downloadDir.toFile());
 
             Process process = processBuilder.start();
             progress.setProcess(process);
@@ -356,10 +376,52 @@ public class YtDlpService {
         command.add("--encoding");
         command.add("UTF-8");
 
-        // Добавляем опции
-        if (request.getFormat() != null) {
+        // Логируем информацию о куки
+        boolean hasCookies = request.getCookies() != null && !request.getCookies().trim().isEmpty();
+        log.info("Cookies provided: {}", hasCookies);
+
+        if (hasCookies) {
+            log.info("Raw cookies length: {}", request.getCookies().length());
+            log.info("Raw cookies (first 200 chars): {}",
+                    request.getCookies().length() > 200 ?
+                            request.getCookies().substring(0, 200) + "..." :
+                            request.getCookies());
+        }
+
+        // Добавляем куки только если они есть - ИСПРАВЛЕННЫЙ БЛОК
+        if (hasCookies) {
+            try {
+                // Создаем временный файл для куки в правильном формате Netscape
+                Path cookiesFile = Files.createTempFile("youtube_cookies", ".txt");
+
+                // Форматируем куки в правильный формат для Netscape
+                String formattedCookies = formatCookiesForNetscape(request.getCookies());
+                Files.writeString(cookiesFile, formattedCookies, StandardCharsets.UTF_8);
+
+                command.add("--cookies");
+                command.add(cookiesFile.toString());
+
+                // Файл будет автоматически удален после завершения процесса
+                cookiesFile.toFile().deleteOnExit();
+
+                log.info("Using cookies file for download: {}", cookiesFile.toString());
+                log.info("Formatted cookies - lines: {}", formattedCookies.split("\n").length);
+
+            } catch (IOException e) {
+                log.warn("Failed to create cookies file: {}", e.getMessage());
+                // Продолжаем без куки, но логируем ошибку
+            }
+        } else {
+            log.info("No cookies provided, proceeding without authentication");
+        }
+
+        // Добавляем опции качества
+        if (request.getFormat() != null && !request.getFormat().trim().isEmpty()) {
             command.add("-f");
             command.add(request.getFormat());
+            log.info("Using format: {}", request.getFormat());
+        } else {
+            log.info("Using default format/quality");
         }
 
         command.add("-o");
@@ -369,7 +431,54 @@ public class YtDlpService {
         command.add("--no-playlist");
         command.add("--newline");
 
+        log.info("Final command length: {} arguments", command.size());
         return command;
+    }
+
+    // МЕТОД ДЛЯ ФОРМАТИРОВАНИЯ КУКИ В ФОРМАТ NETSCAPE
+    private String formatCookiesForNetscape(String rawCookies) {
+        StringBuilder formatted = new StringBuilder();
+
+        // Добавляем заголовок Netscape
+        formatted.append("# Netscape HTTP Cookie File\n");
+        formatted.append("# This file was generated by YT-DLP Spring Boot App\n");
+        formatted.append("# Please edit at your own risk!\n\n");
+
+        // Парсим сырые куки
+        String[] cookiePairs = rawCookies.split(";");
+        int validCookies = 0;
+
+        for (String cookiePair : cookiePairs) {
+            cookiePair = cookiePair.trim();
+            if (cookiePair.isEmpty()) continue;
+
+            String[] parts = cookiePair.split("=", 2);
+            if (parts.length == 2) {
+                String name = parts[0].trim();
+                String value = parts[1].trim();
+
+                if (!name.isEmpty() && !value.isEmpty()) {
+                    // Форматируем в Netscape format
+                    // domain \t flag \t path \t secure \t expiration \t name \t value
+                    formatted.append(".youtube.com")  // domain
+                            .append("\tTRUE")         // flag
+                            .append("\t/")            // path
+                            .append("\tTRUE")         // secure (TRUE для HTTPS сайтов)
+                            .append("\t")             // expiration
+                            .append(String.valueOf(System.currentTimeMillis() / 1000 + 86400)) // 1 день
+                            .append("\t")
+                            .append(name)
+                            .append("\t")
+                            .append(value)
+                            .append("\n");
+                    validCookies++;
+                    log.debug("Formatted cookie: {} (value length: {})", name, value.length());
+                }
+            }
+        }
+
+        log.info("Successfully formatted {} cookies for Netscape format", validCookies);
+        return formatted.toString();
     }
 
     public String getVersion() {
