@@ -1,0 +1,154 @@
+<!DOCTYPE html>
+<html xmlns:th="http://www.thymeleaf.org">
+<body>
+<div th:fragment="content">
+  <div class="theme-switcher">
+    <div class="btn-group btn-group-sm btn-group-compact">
+      <button class="btn btn-outline-secondary" onclick="setTheme('light')">
+        <i class="fas fa-sun"></i>
+      </button>
+      <button class="btn btn-outline-secondary" onclick="setTheme('dark')">
+        <i class="fas fa-moon"></i>
+      </button>
+      <button class="btn btn-outline-secondary" onclick="setTheme('auto')">
+        <i class="fas fa-desktop"></i>
+      </button>
+    </div>
+  </div>
+
+  <div class="container mt-2">
+    <div class="card" th:class="${error != null} ? 'error-card' : ''">
+      <div class="card-header d-flex justify-content-between align-items-center py-1">
+        <h5 class="mb-0">
+          <i class="fas fa-folder-open me-1"></i>
+          Выберите папку для загрузки
+        </h5>
+        <div>
+          <button type="button" class="btn btn-sm btn-outline-primary me-1"
+                  onclick="navigateToRoot()">
+            <i class="fas fa-home"></i>
+          </button>
+          <button type="button" class="btn btn-sm btn-success"
+                  id="selectButton"
+                  onclick="selectCurrentDirectory()">
+            <i class="fas fa-check me-1"></i>Выбрать
+          </button>
+        </div>
+      </div>
+      <div class="card-body p-2">
+        <!-- Ошибки -->
+        <div th:if="${error != null}" class="alert alert-danger mb-2">
+          <div class="d-flex justify-content-between align-items-start">
+            <div>
+              <i class="fas fa-exclamation-circle me-1"></i>
+              <strong>Ошибка:</strong>
+              <span th:text="${error}"></span>
+            </div>
+            <button type="button" class="btn btn-sm btn-outline-danger ms-2"
+                    onclick="navigateToRoot()">
+              <i class="fas fa-home"></i>
+            </button>
+          </div>
+        </div>
+
+        <!-- Контент при отсутствии ошибок -->
+        <div th:if="${error == null}">
+          <!-- Корневой уровень -->
+          <div th:if="${drives != null}">
+            <h6 class="mb-2">Доступные диски:</h6>
+            <div class="list-group">
+              <a th:each="drive : ${drives}"
+                 class="list-group-item list-group-item-action directory-item"
+                 th:attr="data-path=${drive}"
+                 onclick="navigateToPath(this.getAttribute('data-path'))">
+                <i class="fas fa-hdd me-1 text-primary"></i>
+                <span th:text="${drive}"></span>
+              </a>
+            </div>
+          </div>
+
+          <!-- Уровень с папками -->
+          <div th:if="${currentPath != null and drives == null}">
+            <!-- Навигация -->
+            <nav class="mb-2">
+              <ol class="breadcrumb">
+                <li class="breadcrumb-item">
+                  <a href="#" onclick="navigateToRoot()">Корень</a>
+                </li>
+                <li class="breadcrumb-item active" th:text="${currentPath}"></li>
+              </ol>
+            </nav>
+
+            <!-- Содержимое папки -->
+            <div class="list-group">
+              <!-- Кнопка "Наверх" -->
+              <a th:if="${parentPath != null}"
+                 class="list-group-item list-group-item-action directory-item"
+                 th:attr="data-path=${parentPath}"
+                 onclick="navigateToPath(this.getAttribute('data-path'))">
+                <i class="fas fa-arrow-up me-1 text-muted"></i>
+                На уровень выше
+              </a>
+
+              <!-- Папки -->
+              <a th:each="item : ${items}"
+                 th:if="${item.directory}"
+                 class="list-group-item list-group-item-action directory-item"
+                 th:attr="data-path=${item.path}"
+                 onclick="navigateToPath(this.getAttribute('data-path'))">
+                <i class="fas fa-folder me-1 text-warning"></i>
+                <span th:text="${item.name}"></span>
+              </a>
+
+              <!-- Файлы -->
+              <div th:each="item : ${items}"
+                   th:unless="${item.directory}"
+                   class="list-group-item file-item">
+                <i class="fas fa-file me-1 text-secondary"></i>
+                <span th:text="${item.name}"></span>
+                <small class="float-end" th:text="${item.size}"></small>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <!-- Сообщение при ошибке -->
+        <div th:if="${error != null}" class="text-center py-3">
+          <i class="fas fa-exclamation-triangle fa-2x text-danger mb-2"></i>
+          <h5 class="text-danger">Не удалось открыть директорию</h5>
+          <p class="text-muted">Пожалуйста, выберите другую папку или вернитесь в корневую директорию</p>
+          <button type="button" class="btn btn-primary btn-sm" onclick="navigateToRoot()">
+            <i class="fas fa-home me-1"></i>Вернуться в корень
+          </button>
+        </div>
+      </div>
+      <div class="card-footer py-1">
+        <div class="d-flex justify-content-between align-items-center">
+          <small class="text-muted" th:if="${currentPath != null and error == null}">
+            Текущий путь: <code th:text="${currentPath}"></code>
+          </small>
+          <small class="text-muted" th:if="${error != null}">
+            Неверный путь: <code th:text="${currentPath}"></code>
+          </small>
+          <div>
+            <button type="button" class="btn btn-outline-primary btn-sm me-1"
+                    onclick="navigateToRoot()">
+              <i class="fas fa-home"></i>
+            </button>
+            <button type="button" class="btn btn-secondary btn-sm me-1"
+                    onclick="window.close()">
+              Отмена
+            </button>
+            <button type="button" class="btn btn-primary btn-sm"
+                    id="footerSelectButton"
+                    onclick="selectCurrentDirectory()">
+              <i class="fas fa-check me-1"></i>Выбрать
+            </button>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+</body>
+</html>
