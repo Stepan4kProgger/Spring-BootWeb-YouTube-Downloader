@@ -236,7 +236,7 @@
                                 ${(status === 'downloading' || status === 'paused') && cancellable ? `
                                     <button class="btn btn-sm btn-outline-danger"
                                             onclick="cancelDownload('${downloadId}')"
-                                            title="Отменить">
+                                            title="Отменить и удалить частичный файл">
                                         <i class="fas fa-times"></i>
                                     </button>
                                 ` : ''}
@@ -356,6 +356,7 @@
                     </div>
                 </div>
                 <small class="text-info"><i class="fas fa-pause me-1"></i>Приостановлено: ${progress}%</small>
+                <div class="mt-1"><small class="text-muted">Можно возобновить</small></div>
             `;
         } else if (status === 'completed') {
             return `<div class="text-success mb-2"><i class="fas fa-check-circle me-1"></i>Завершено</div>`;
@@ -473,13 +474,26 @@
         }
     });
 
-    // Update submit button state
+    // Функция для обновления состояния кнопки отправки
     function updateSubmitButton() {
         const url = document.getElementById('url').value;
         const directory = document.getElementById('downloadDirectory').value;
         const submitButton = document.getElementById('submitButton');
+        const hasUnsavedSettings = checkSettingsChanges(); // Проверяем несохраненные настройки
 
-        submitButton.disabled = !url || !directory;
+        // Кнопка активна только если URL и директория заполнены И нет несохраненных настроек
+        submitButton.disabled = !url || !directory || hasUnsavedSettings;
+
+        // Визуальная обратная связь
+        if (hasUnsavedSettings) {
+            submitButton.title = "Сохраните настройки перед скачиванием";
+            submitButton.classList.remove('btn-primary');
+            submitButton.classList.add('btn-secondary');
+        } else {
+            submitButton.title = "Скачать видео";
+            submitButton.classList.remove('btn-secondary');
+            submitButton.classList.add('btn-primary');
+        }
     }
 
     // Check URL and directory inputs
@@ -488,29 +502,147 @@
 
     // Функция для загрузки всех настроек
     function loadAllSettings() {
-        fetch('/yt-dlp/settings')
+        return fetch('/yt-dlp/settings')
             .then(response => response.json())
             .then(settings => {
                 // Загружаем настройки в форму
-                if (settings.directory && document.getElementById('downloadDirectory').value === '') {
+                if (settings.directory) {
                     document.getElementById('downloadDirectory').value = settings.directory;
                     updateSubmitButton();
                 }
 
-                document.getElementById('rememberLastDirectory').checked =
-                    settings.rememberLastDirectory === 'true';
-
                 document.getElementById('clearHistoryOnStartup').checked =
                     settings.clearHistoryOnStartup === 'true';
 
-                // Загружаем настройку качества
                 if (settings.quality) {
                     document.getElementById('quality').value = settings.quality;
                 }
+
+                // После загрузки настроек инициализируем отслеживание изменений
+                initSettingsTracking();
             })
             .catch(error => {
                 console.error('Error loading settings:', error);
+                // Все равно инициализируем отслеживание, даже если настройки не загрузились
+                initSettingsTracking();
             });
+    }
+
+    // Переменная для отслеживания изменений
+    let settingsChanged = false;
+    let originalSettings = {};
+
+    // Функция для сохранения всех настроек
+    function saveAllSettings() {
+        const saveButton = document.getElementById('saveSettingsBtn');
+        if (!saveButton.disabled) {
+            saveButton.disabled = true;
+            saveButton.innerHTML = '<i class="fas fa-spinner fa-spin me-1"></i>Сохранение...';
+
+            const formData = new URLSearchParams();
+            formData.append('directory', document.getElementById('downloadDirectory').value);
+            formData.append('clearHistoryOnStartup', document.getElementById('clearHistoryOnStartup').checked);
+            formData.append('quality', document.getElementById('quality').value);
+
+            fetch('/yt-dlp/settings/save-all', {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/x-www-form-urlencoded',
+                },
+                body: formData
+            })
+            .then(response => {
+                if (!response.ok) {
+                    throw new Error('Ошибка сохранения настроек');
+                }
+                return response.text();
+            })
+            .then(message => {
+                showNotification(message, 'success');
+                captureOriginalSettings();
+                updateSaveButtonState();
+                updateSubmitButton();
+
+                setTimeout(() => {
+                    saveButton.innerHTML = '<i class="fas fa-save me-1"></i>Сохранить настройки';
+                }, 1000);
+            })
+            .catch(error => {
+                console.error('Error saving settings:', error);
+                showNotification('Ошибка сохранения настроек: ' + error.message, 'error');
+                saveButton.disabled = false;
+                saveButton.innerHTML = '<i class="fas fa-save me-1"></i>Сохранить настройки';
+                updateSubmitButton();
+            });
+        }
+    }
+
+    // Функция для захвата оригинальных значений настроек
+    function captureOriginalSettings() {
+        originalSettings = {
+            directory: document.getElementById('downloadDirectory').value,
+            clearHistoryOnStartup: document.getElementById('clearHistoryOnStartup').checked,
+            quality: document.getElementById('quality').value
+        };
+    }
+
+    // Функция для проверки изменений в настройках
+    function checkSettingsChanges() {
+        const currentSettings = {
+            directory: document.getElementById('downloadDirectory').value,
+            clearHistoryOnStartup: document.getElementById('clearHistoryOnStartup').checked,
+            quality: document.getElementById('quality').value
+        };
+
+        return JSON.stringify(originalSettings) !== JSON.stringify(currentSettings);
+    }
+
+    // Функция для обновления состояния кнопки сохранения
+    function updateSaveButtonState() {
+        const saveButton = document.getElementById('saveSettingsBtn');
+        const hasChanges = checkSettingsChanges();
+
+        saveButton.disabled = !hasChanges;
+
+        // Добавляем визуальные стили для активной/неактивной кнопки
+        if (hasChanges) {
+            saveButton.classList.remove('btn-secondary');
+            saveButton.classList.add('btn-primary');
+        } else {
+            saveButton.classList.remove('btn-primary');
+            saveButton.classList.add('btn-secondary');
+        }
+    }
+
+    // Инициализация отслеживания изменений в настройках
+    function initSettingsTracking() {
+        // Захватываем оригинальные значения после загрузки настроек
+        setTimeout(() => {
+            captureOriginalSettings();
+            updateSaveButtonState();
+        }, 500);
+
+        // Слушаем изменения во всех полях настроек
+        const settingsInputs = [
+            'downloadDirectory',
+            'clearHistoryOnStartup',
+            'quality'
+        ];
+
+        settingsInputs.forEach(inputId => {
+            const element = document.getElementById(inputId);
+            if (element) {
+                element.addEventListener('change', updateSaveButtonState);
+                element.addEventListener('input', updateSaveButtonState);
+            }
+        });
+
+        // Особый случай для directory browser
+        window.addEventListener('message', function(event) {
+            if (event.data && event.data.type === 'directorySelected') {
+                setTimeout(updateSaveButtonState, 100);
+            }
+        });
     }
 
     // Улучшенная функция вставки с проверкой URL
@@ -545,80 +677,28 @@
                text.startsWith('www.');
     }
 
-    // Функция для обновления настройки
-    function updateSetting(key, value) {
-        fetch('/yt-dlp/settings/update', {
-            method: 'POST',
-            headers: {
-                'Content-Type': 'application/x-www-form-urlencoded',
-            },
-            body: new URLSearchParams({ key, value: String(value) })
-        })
-        .then(response => {
-            if (!response.ok) {
-                throw new Error('Ошибка сохранения настройки');
-            }
-            return response.text();
-        })
-        .then(message => {
-            console.log('Setting updated:', key, value);
-        })
-        .catch(error => {
-            console.error('Error updating setting:', error);
-            showNotification('Ошибка сохранения настройки: ' + error.message, 'error');
-        });
-    }
-
     // Initialize theme and other components
     document.addEventListener('DOMContentLoaded', function() {
-        loadTheme(); // Загружаем тему первой
-        setupThemeListener(); // Настраиваем отслеживание системной темы
-
+        loadTheme();
+        setupThemeListener();
         updateSubmitButton();
 
         // Загружаем все настройки
         loadAllSettings();
 
-        // Запускаем загрузку версии и списка загрузок
+        // Остальной код инициализации...
         loadYtDlpVersion();
         updateDownloadsList();
 
-        fetch('/yt-dlp/get-current-directory')
-            .then(response => {
-                if (!response.ok) throw new Error('Network response was not ok');
-                return response.text();
-            })
-            .then(directory => {
-                if (directory && directory !== 'null' && document.getElementById('downloadDirectory').value === '') {
-                    document.getElementById('downloadDirectory').value = directory;
-                    updateSubmitButton();
-                }
-            })
-            .catch(error => {
-                console.log('No saved directory found or error:', error);
-            });
-
-        // Обработчик клика по кнопке вставки
+        // Обработчики для кнопки вставки и других элементов...
         const pasteButton = document.getElementById('pasteButton');
         if (pasteButton) {
             pasteButton.addEventListener('click', pasteFromClipboard);
         }
 
-        // Горячая клавиша Ctrl+V для поля ввода
-        const urlInput = document.getElementById('url');
-        if (urlInput) {
-            urlInput.addEventListener('keydown', function(e) {
-                if (e.ctrlKey && e.key === 'v') {
-                    setTimeout(updateSubmitButton, 100);
-                }
-            });
-
-            // Обновляем при обычной вставке
-            urlInput.addEventListener('input', updateSubmitButton);
-            urlInput.addEventListener('paste', function() {
-                setTimeout(updateSubmitButton, 100);
-            });
-        }
+        // Обновляем кнопку отправки при изменении URL и директории
+        document.getElementById('url').addEventListener('input', updateSubmitButton);
+        document.getElementById('downloadDirectory').addEventListener('input', updateSubmitButton);
     });
 
     // Auto-hide alerts after 5 seconds

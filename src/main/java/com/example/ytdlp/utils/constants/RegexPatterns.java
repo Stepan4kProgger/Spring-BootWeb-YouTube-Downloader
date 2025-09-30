@@ -11,4 +11,5 @@ public class RegexPatterns {
     public static final Pattern GENERAL_FILE_PATTERN = Pattern.compile("(\\S+\\." + FILE_EXTENSIONS + ")");
     public static final Pattern WINDOWS_PATH_PATTERN = Pattern.compile("(" +
             "[a-zA-Z]:\\\\[^\\n]+?\\." + FILE_EXTENSIONS + ")");
+    public static final Pattern MERGER_PATTERN = Pattern.compile("Merging formats into \"([^\"]+)\"");
 }

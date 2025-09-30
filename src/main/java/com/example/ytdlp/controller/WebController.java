@@ -15,12 +15,8 @@ import org.springframework.web.bind.annotation.*;
 import org.springframework.web.servlet.mvc.support.RedirectAttributes;
 
 import java.io.File;
-import java.io.OutputStream;
 import java.net.URLDecoder;
 import java.nio.charset.StandardCharsets;
-import java.nio.file.Files;
-import java.nio.file.Path;
-import java.nio.file.Paths;
 import java.time.LocalDateTime;
 import java.util.*;
 
@@ -95,11 +91,15 @@ public class WebController {
     public List<DownloadProgress> getAllDownloads() {
         List<DownloadProgress> allDownloads = new ArrayList<>();
 
+        // Добавляем активные загрузки
         allDownloads.addAll(ytDlpService.getActiveDownloads().stream()
                 .map(DownloadProgress::new).toList());
+
+        // Добавляем историю загрузок (теперь там только завершенные/ошибки/отмененные)
         allDownloads.addAll(ytDlpService.getDownloadHistory().stream()
                 .map(DownloadProgress::new).toList());
 
+        // Сортируем: активные сверху, затем по времени завершения
         allDownloads.sort((a, b) -> {
             boolean aIsActive = isActiveStatus(a.getStatus());
             boolean bIsActive = isActiveStatus(b.getStatus());
@@ -220,17 +220,20 @@ public class WebController {
         }
     }
 
-    @PostMapping("/settings/update")
+    @PostMapping("/settings/save-all")
     @ResponseBody
-    public ResponseEntity<String> updateSetting(
-            @RequestParam String key,
-            @RequestParam String value) {
+    public ResponseEntity<String> saveAllSettings(
+            @RequestParam String directory,
+            @RequestParam boolean clearHistoryOnStartup,
+            @RequestParam String quality) {
+
         try {
-            appConfig.updateConfig(key, value);
-            return ResponseEntity.ok("Настройка сохранена");
+            // Используем новый метод для массового обновления
+            appConfig.updateAllSettings(directory, clearHistoryOnStartup, quality);
+            return ResponseEntity.ok("Все настройки сохранены");
         } catch (Exception e) {
             return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR)
-                    .body("Ошибка сохранения настройки: " + e.getMessage());
+                    .body("Ошибка сохранения настроек: " + e.getMessage());
         }
     }
 
@@ -240,7 +243,6 @@ public class WebController {
         try {
             Map<String, String> settings = new HashMap<>();
             settings.put("directory", appConfig.getDirectory());
-            settings.put("rememberLastDirectory", String.valueOf(appConfig.isRememberLastDirectory()));
             settings.put("clearHistoryOnStartup", String.valueOf(appConfig.isClearHistoryOnStartup()));
             settings.put("quality", appConfig.getQuality());
 

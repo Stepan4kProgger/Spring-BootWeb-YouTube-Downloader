@@ -22,7 +22,6 @@ import java.util.concurrent.Executor;
 @ConfigurationProperties(prefix = "app.download")
 public class ApplicationConfig {
     private String directory = "D:/downloads";
-    private boolean rememberLastDirectory = true;
     private boolean clearHistoryOnStartup = false;
     private String quality = "worst";
 
@@ -39,11 +38,6 @@ public class ApplicationConfig {
         return executor;
     }
 
-    public void setDirectory(String directory) {
-        this.directory = directory.replace("/", File.separator)
-                .replace("\\", File.separator);
-    }
-
     // Загрузка конфигурации из файла
     public void loadConfig() {
         Properties props = new Properties();
@@ -51,8 +45,6 @@ public class ApplicationConfig {
             props.load(input);
 
             this.directory = props.getProperty("directory", "D:/downloads");
-            this.rememberLastDirectory = Boolean.parseBoolean(
-                    props.getProperty("rememberLastDirectory", "true"));
             this.clearHistoryOnStartup = Boolean.parseBoolean(
                     props.getProperty("clearHistoryOnStartup", "false"));
             this.quality = props.getProperty("quality", "worst");
@@ -67,7 +59,6 @@ public class ApplicationConfig {
     public void saveConfig() {
         Properties props = new Properties();
         props.setProperty("directory", this.directory);
-        props.setProperty("rememberLastDirectory", String.valueOf(this.rememberLastDirectory));
         props.setProperty("clearHistoryOnStartup", String.valueOf(this.clearHistoryOnStartup));
         props.setProperty("quality", this.quality);
 
@@ -79,37 +70,11 @@ public class ApplicationConfig {
         }
     }
 
-    // Обновление конкретной настройки
-    public void updateConfig(String key, String value) {
-        Properties props = new Properties();
-        try (FileInputStream input = new FileInputStream(CONFIG_FILE)) {
-            props.load(input);
-        } catch (IOException e) {
-            // Файл не существует, продолжаем
-        }
-
-        props.setProperty(key, value);
-
-        try (FileOutputStream output = new FileOutputStream(CONFIG_FILE)) {
-            props.store(output, "YT-DLP Configuration");
-        } catch (IOException e) {
-            throw new RuntimeException("Failed to update configuration", e);
-        }
-
-        // Обновляем значение в памяти
-        switch (key) {
-            case "directory":
-                this.directory = value;
-                break;
-            case "rememberLastDirectory":
-                this.rememberLastDirectory = Boolean.parseBoolean(value);
-                break;
-            case "clearHistoryOnStartup":
-                this.clearHistoryOnStartup = Boolean.parseBoolean(value);
-                break;
-            case "quality":
-                this.quality = value;
-                break;
-        }
+    public void updateAllSettings(String directory,
+                                  boolean clearHistoryOnStartup, String quality) {
+        this.directory = directory;
+        this.clearHistoryOnStartup = clearHistoryOnStartup;
+        this.quality = quality;
+        saveConfig();
     }
 }

@@ -21,6 +21,7 @@ import org.springframework.stereotype.Service;
 import java.io.*;
 import java.net.URLDecoder;
 import java.nio.charset.StandardCharsets;
+import java.nio.file.DirectoryStream;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.Paths;
@@ -195,43 +196,27 @@ public class YtDlpService {
         progress.setProgress(0);
         progress.setStartTime(LocalDateTime.now());
 
-        if (request.getDownloadDirectory() == null || request.getDownloadDirectory().trim().isEmpty()){
+        // Берем директорию из конфига, если не указана в запросе
+        if (request.getDownloadDirectory() == null || request.getDownloadDirectory().trim().isEmpty()) {
             request.setDownloadDirectory(appConfig.getDirectory());
         }
         progress.setDownloadDirectory(request.getDownloadDirectory());
 
+        // Берем качество из конфига, если не указано в запросе
+        if (request.getFormat() == null || request.getFormat().trim().isEmpty()) {
+            request.setFormat(appConfig.getQuality());
+        }
+
         activeDownloads.put(downloadId, progress);
 
-        // Улучшенное логирование
         log.info("=== Starting Download ===");
         log.info("Download ID: {}", downloadId);
         log.info("URL: {}", request.getUrl());
         log.info("Directory: {}", request.getDownloadDirectory());
         log.info("Format: {}", request.getFormat());
-        log.info("Cookies provided: {}", request.getCookies() != null && !request.getCookies().isEmpty());
-
-        if (request.getCookies() != null && !request.getCookies().isEmpty()) {
-            log.info("Cookies length: {}", request.getCookies().length());
-            // Логируем количество куки-пар
-            String[] cookiePairs = request.getCookies().split(";");
-            log.info("Number of cookie pairs: {}", cookiePairs.length);
-        }
 
         try {
             String targetDirectory = request.getDownloadDirectory();
-
-            if (appConfig.isRememberLastDirectory()) {
-                appConfig.setDirectory(targetDirectory);
-            }
-
-            if (request.getFormat() != null && !request.getFormat().isEmpty()) {
-                appConfig.setQuality(request.getFormat());
-                appConfig.updateConfig("quality", request.getFormat());
-            } else {
-                request.setFormat(appConfig.getQuality());
-            }
-
-            appConfig.saveConfig();
 
             // Проверяем существование yt-dlp.exe
             Path ytDlp = Paths.get(ytDlpPath);
@@ -241,6 +226,8 @@ public class YtDlpService {
                 progress.setStatus("error");
                 progress.setErrorMessage(errorMsg);
                 progress.setEndTime(LocalDateTime.now());
+                addToDownloadHistory(progress);
+                activeDownloads.remove(downloadId);
                 return new DownloadResponse(false, null, null, errorMsg);
             }
 
@@ -267,14 +254,17 @@ public class YtDlpService {
 
             // Создаем отдельный поток для чтения вывода в реальном времени
             Thread outputReaderThread = getOutputReaderThread(process, output, progress);
+            outputReaderThread.start();
 
             // Ждем завершения процесса
             int exitCode = process.waitFor();
-            outputReaderThread.join(); // Ждем завершения потока чтения
+            outputReaderThread.join();
 
             String fullOutput = output.toString();
             log.info("yt-dlp process completed with exit code: {}", exitCode);
-            log.debug("Full output: {}", fullOutput);
+
+            // Убираем из активных процессов
+            activeProcesses.remove(downloadId);
 
             if (exitCode == 0) {
                 progress.setStatus("completed");
@@ -282,11 +272,15 @@ public class YtDlpService {
                 progress.setEndTime(LocalDateTime.now());
 
                 String filename = extractFilenameFromOutput(fullOutput);
+                // Теперь filename уже должен быть финальным именем без идентификаторов
                 progress.setFilename(filename);
 
-                log.info("Download completed successfully. Filename: {}", filename);
+                log.info("Download completed successfully. Final filename: {}", filename);
 
+                // СРАЗУ добавляем в историю и удаляем из активных
                 addToDownloadHistory(progress);
+                activeDownloads.remove(downloadId);
+                activeProcesses.remove(downloadId);
 
                 return new DownloadResponse(true, "Download completed successfully",
                         targetDirectory, filename, null);
@@ -300,18 +294,27 @@ public class YtDlpService {
 
                 log.error("Download failed. Exit code: {}, Output: {}", exitCode, fullOutput);
 
+                // СРАЗУ добавляем в историю и удаляем из активных
                 addToDownloadHistory(progress);
+                activeDownloads.remove(downloadId);
+                activeProcesses.remove(downloadId);
 
                 return new DownloadResponse(false, null, targetDirectory, filename,
                         "Download failed with exit code: " + exitCode + ". Output: " + fullOutput);
             }
 
         } catch (IOException | InterruptedException e) {
-            return handleError(downloadId, progress, e, "Download process error");
+            // При ошибке тоже сразу перемещаем в историю
+            DownloadResponse errorResponse = handleError(downloadId, progress, e, "Download process error");
+            activeDownloads.remove(downloadId);
+            activeProcesses.remove(downloadId);
+            return errorResponse;
         } catch (Exception e) {
-            return handleError(downloadId, progress, e, "Unexpected download error");
-        } finally {
-            scheduleCleanup(downloadId);
+            // При любой другой ошибке
+            DownloadResponse errorResponse = handleError(downloadId, progress, e, "Unexpected download error");
+            activeDownloads.remove(downloadId);
+            activeProcesses.remove(downloadId);
+            return errorResponse;
         }
     }
 
@@ -362,8 +365,6 @@ public class YtDlpService {
                 log.error("Error reading process output: {}", e.getMessage());
             }
         });
-
-        outputReaderThread.start();
         return outputReaderThread;
     }
 
@@ -388,7 +389,7 @@ public class YtDlpService {
                             request.getCookies());
         }
 
-        // Добавляем куки только если они есть - ИСПРАВЛЕННЫЙ БЛОК
+        // Добавляем куки только если они есть
         if (hasCookies) {
             try {
                 // Создаем временный файл для куки в правильном формате Netscape
@@ -415,11 +416,21 @@ public class YtDlpService {
             log.info("No cookies provided, proceeding without authentication");
         }
 
-        // Добавляем опции качества
+        // Добавляем опции качества с поддержкой числовых значений
         if (request.getFormat() != null && !request.getFormat().trim().isEmpty()) {
+            String format = request.getFormat();
             command.add("-f");
-            command.add(request.getFormat());
-            log.info("Using format: {}", request.getFormat());
+
+            // Проверяем, является ли формат числом (разрешением)
+            if (format.matches("\\d+")) {
+                String formatString = String.format("bestvideo[height<=%d][ext=mp4]+bestaudio[ext=m4a]/best", Integer.parseInt(format));
+                command.add(formatString);
+                log.info("Using resolution-based format: {}", formatString);
+            } else {
+                // Используем стандартные значения (worst/best)
+                command.add(format);
+                log.info("Using standard format: {}", format);
+            }
         } else {
             log.info("Using default format/quality");
         }
@@ -435,7 +446,6 @@ public class YtDlpService {
         return command;
     }
 
-    // МЕТОД ДЛЯ ФОРМАТИРОВАНИЯ КУКИ В ФОРМАТ NETSCAPE
     private String formatCookiesForNetscape(String rawCookies) {
         StringBuilder formatted = new StringBuilder();
 
@@ -569,6 +579,11 @@ public class YtDlpService {
                     pattern = RegexPatterns.ALREADY_DOWNLOADED_PATTERN;
                     yield 1;
                 }
+                case "merger" -> {
+                    // Паттерн для строки [Merger]
+                    pattern = RegexPatterns.MERGER_PATTERN;
+                    yield 1;
+                }
                 default -> {
                     // Общий паттерн для любых строк с расширениями файлов
                     pattern = RegexPatterns.GENERAL_FILE_PATTERN;
@@ -591,8 +606,24 @@ public class YtDlpService {
         log.info("Parsing complete output for filename");
         log.info("Full output: {}", output);
 
-        // Сначала ищем строку с полным путём к файлу (когда файл уже существует)
         String[] lines = output.split("\n");
+
+        // В первую очередь ищем финальное имя файла из строки [Merger]
+        for (String line : lines) {
+            if (line.contains("[Merger]") && line.contains("Merging formats into")) {
+                // Извлекаем путь из строки типа: [Merger] Merging formats into "D:\Work\Java\output\Solar System Model From a Drone's View.mp4"
+                Pattern mergerPattern = Pattern.compile("Merging formats into \"([^\"]+)\"");
+                Matcher matcher = mergerPattern.matcher(line);
+                if (matcher.find()) {
+                    String fullPath = matcher.group(1);
+                    String filename = extractCleanFilename(fullPath);
+                    log.info("Found final filename from Merger: {}", filename);
+                    return filename;
+                }
+            }
+        }
+
+        // Если не нашли в [Merger], ищем другие паттерны
         for (String line : lines) {
             // Ищем строки типа: [download] D:\downloads\Full File Name.mp4 has already been downloaded
             if (line.contains("has already been downloaded") && line.contains("[download]")) {
@@ -608,18 +639,7 @@ public class YtDlpService {
                 String filename = extractFilename(line, "destination");
                 if (!filename.equals("unknown")) {
                     log.info("Found filename in Destination line: {}", filename);
-                    return filename;
-                }
-            }
-        }
-
-        // Если не нашли, ищем другие паттерны
-        for (String line : lines) {
-            if (line.contains("[download]") || line.contains("Writing") || line.contains("[ffmpeg]")) {
-                String filename = extractFilename(line, "general");
-                if (!filename.equals("unknown")) {
-                    log.info("Found filename in other line: {}", filename);
-                    return filename;
+                    // Не возвращаем сразу, так как это может быть временный файл
                 }
             }
         }
@@ -637,17 +657,6 @@ public class YtDlpService {
         return "unknown";
     }
 
-    private void scheduleCleanup(String downloadId) {
-        new Thread(() -> {
-            try {
-                Thread.sleep(300000); // Удаляем через 5 минут
-                activeDownloads.remove(downloadId);
-            } catch (InterruptedException e) {
-                Thread.currentThread().interrupt();
-            }
-        }).start();
-    }
-
     public List<DownloadProgress> getActiveDownloads() {
         return new ArrayList<>(activeDownloads.values());
     }
@@ -659,14 +668,7 @@ public class YtDlpService {
     }
 
     public List<DownloadProgress> getDownloadHistory() {
-        // Исключаем активные загрузки из истории
-        Set<String> activeUrls = getActiveDownloads().stream()
-                .map(DownloadProgress::getUrl)
-                .filter(Objects::nonNull)
-                .collect(Collectors.toSet());
-
         return downloadHistory.stream()
-                .filter(item -> item.getUrl() == null || !activeUrls.contains(item.getUrl()))
                 .sorted((a, b) -> {
                     LocalDateTime aTime = a.getEndTime() != null ? a.getEndTime() : a.getStartTime();
                     LocalDateTime bTime = b.getEndTime() != null ? b.getEndTime() : b.getStartTime();
@@ -685,16 +687,18 @@ public class YtDlpService {
             try {
                 Process process = progress.getProcess();
                 if (process.isAlive()) {
-                    process.destroy();
-                    progress.setStatus("paused");
-                    progress.setPausable(false);
-
-                    // Удаляем из активных процессов
-                    activeProcesses.remove(downloadId);
-
-                    log.info("Download paused: {}", downloadId);
-                    return true;
+                    process.destroyForcibly();
+                    process.waitFor(3, TimeUnit.SECONDS);
                 }
+
+                progress.setStatus("paused");
+                progress.setPausable(false);
+                progress.setCancellable(true);
+
+                activeProcesses.remove(downloadId);
+
+                log.info("Download paused: {}", downloadId);
+                return true;
             } catch (Exception e) {
                 log.error("Error pausing download: {}", e.getMessage());
             }
@@ -706,13 +710,18 @@ public class YtDlpService {
         DownloadProgress progress = activeDownloads.get(downloadId);
         if (progress != null && "paused".equals(progress.getStatus())) {
             try {
-                // Перезапускаем загрузку с того же URL
+                // Создаем новый запрос с теми же параметрами
                 DownloadRequest request = new DownloadRequest();
                 request.setUrl(progress.getUrl());
                 request.setDownloadDirectory(progress.getDownloadDirectory());
+                request.setFormat(appConfig.getQuality()); // Используем текущее качество из конфига
 
-                // Запускаем новую загрузку
+                // Запускаем новую загрузку - yt-dlp автоматически продолжит с того же места
                 downloadVideo(request);
+
+                // Удаляем старую paused запись из активных загрузок
+                activeDownloads.remove(downloadId);
+
                 log.info("Download resumed: {}", downloadId);
                 return true;
             } catch (Exception e) {
@@ -728,14 +737,21 @@ public class YtDlpService {
         if (progress != null && progress.getProcess() != null &&
                 ("downloading".equals(progress.getStatus()) || "paused".equals(progress.getStatus()))) {
             try {
+                // Останавливаем процесс
                 Process process = progress.getProcess();
                 if (process.isAlive()) {
                     process.destroyForcibly();
+                    process.waitFor(3, TimeUnit.SECONDS);
                 }
+
+                // Пытаемся найти и удалить недокачанный файл
+                deletePartialFile(progress);
+
                 progress.setStatus("cancelled");
                 progress.setCancellable(false);
                 progress.setPausable(false);
                 progress.setEndTime(LocalDateTime.now());
+                progress.setErrorMessage("Загрузка отменена пользователем");
 
                 // Удаляем из активных процессов
                 activeProcesses.remove(downloadId);
@@ -746,10 +762,73 @@ public class YtDlpService {
                 // Удаляем из активных загрузок
                 activeDownloads.remove(downloadId);
 
-                log.info("Download cancelled: {}", downloadId);
+                log.info("Download cancelled and partial file deleted: {}", downloadId);
                 return true;
             } catch (Exception e) {
                 log.error("Error cancelling download: {}", e.getMessage());
+            }
+        }
+        return false;
+    }
+
+    // Новый метод для удаления частично скачанного файла
+    private void deletePartialFile(DownloadProgress progress) {
+        try {
+            if (progress.getFilename() != null && !progress.getFilename().equals("unknown")) {
+                Path filePath = Paths.get(progress.getDownloadDirectory(), progress.getFilename());
+
+                // Пытаемся удалить основной файл
+                Files.deleteIfExists(filePath);
+
+                // Также пытаемся удалить временные файлы yt-dlp (обычно с расширением .part)
+                try (DirectoryStream<Path> stream = Files.newDirectoryStream(
+                        Paths.get(progress.getDownloadDirectory()),
+                        progress.getFilename() + ".*")) {
+
+                    for (Path tempFile : stream) {
+                        if (tempFile.toString().endsWith(".part") ||
+                                tempFile.toString().contains(progress.getFilename() + ".")) {
+                            Files.deleteIfExists(tempFile);
+                            log.info("Deleted partial file: {}", tempFile);
+                        }
+                    }
+                }
+            }
+        } catch (IOException e) {
+            log.warn("Could not delete partial file for download: {}", progress.getDownloadId(), e);
+        }
+    }
+
+    public boolean deleteDownloadedFile(String downloadId) {
+        // Ищем в активных загрузках
+        DownloadProgress progress = activeDownloads.get(downloadId);
+        if (progress == null) {
+            // Ищем в истории
+            progress = downloadHistory.stream()
+                    .filter(p -> downloadId.equals(p.getDownloadId()))
+                    .findFirst()
+                    .orElse(null);
+        }
+
+        if (progress != null && ("completed".equals(progress.getStatus()) ||
+                "error".equals(progress.getStatus()) ||
+                "cancelled".equals(progress.getStatus()))) {
+            try {
+                Path filePath = Paths.get(progress.getDownloadDirectory(), progress.getFilename());
+                Files.deleteIfExists(filePath);
+
+                // Удаляем из истории
+                downloadHistory.removeIf(p -> downloadId.equals(p.getDownloadId()));
+                saveDownloadHistory();
+
+                // Удаляем из активных, если там остался
+                activeDownloads.remove(downloadId);
+
+                log.info("File deleted: {}", filePath);
+                return true;
+            } catch (IOException e) {
+                log.error("Error deleting file: {}", e.getMessage());
+                return false;
             }
         }
         return false;
@@ -765,36 +844,6 @@ public class YtDlpService {
                             "Null process");
         }
         return info;
-    }
-
-    public boolean deleteDownloadedFile(String downloadId) {
-        // Ищем в активных загрузках
-        DownloadProgress progress = activeDownloads.get(downloadId);
-        if (progress == null) {
-            // Ищем в истории
-            progress = downloadHistory.stream()
-                    .filter(p -> downloadId.equals(p.getDownloadId()))
-                    .findFirst()
-                    .orElse(null);
-        }
-
-        if (progress != null && "completed".equals(progress.getStatus())) {
-            try {
-                Path filePath = Paths.get(progress.getDownloadDirectory(), progress.getFilename());
-                Files.deleteIfExists(filePath);
-
-                // Удаляем из истории
-                downloadHistory.removeIf(p -> downloadId.equals(p.getDownloadId()));
-                saveDownloadHistory();
-
-                log.info("File deleted: {}", filePath);
-                return true;
-            } catch (IOException e) {
-                log.error("Error deleting file: {}", e.getMessage());
-                return false;
-            }
-        }
-        return false;
     }
 
     public void stopAllDownloads() {
@@ -871,6 +920,8 @@ public class YtDlpService {
             progress.setEndTime(LocalDateTime.now());
 
             addToDownloadHistory(progress);
+            activeDownloads.remove(downloadId);
+            activeProcesses.remove(downloadId);
         }
 
         return new DownloadResponse(false, null, null, "unknown",

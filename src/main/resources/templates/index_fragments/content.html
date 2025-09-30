@@ -94,18 +94,6 @@
                         </div>
                       </div>
 
-                      <!-- Remember directory option -->
-                      <div class="mb-2">
-                        <div class="form-check form-switch">
-                          <input class="form-check-input" type="checkbox"
-                                 id="rememberLastDirectory" name="rememberLastDirectory" checked
-                                 onchange="toggleRememberDirectory(this.checked)">
-                          <label class="form-check-label fw-bold" for="rememberLastDirectory">
-                            Запоминать последнюю директорию
-                          </label>
-                        </div>
-                      </div>
-
                       <!-- Clear history on startup option -->
                       <div class="mb-2">
                         <div class="form-check form-switch">
@@ -123,8 +111,29 @@
                         <label for="quality" class="form-label fw-bold">Качество видео</label>
                         <select class="form-select form-select-sm" id="quality" name="format">
                           <option value="worst">Худшее доступное</option>
+                          <option value="144">144p</option>
+                          <option value="240">240p</option>
+                          <option value="360">360p</option>
+                          <option value="480">480p</option>
+                          <option value="720">720p</option>
+                          <option value="1080">1080p</option>
+                          <option value="1440">1440p (2K)</option>
+                          <option value="2160">2160p (4K)</option>
                           <option value="best">Лучшее доступное</option>
                         </select>
+                        <div class="form-text">
+                          <i class="fas fa-exclamation-triangle text-warning me-1"></i>
+                          Числовые форматы работают ТОЛЬКО с расширением. Во избежание ERROR 403 используйте "Лучшее/Худшее доступное"
+                        </div>
+                      </div>
+
+                      <!-- Save settings button -->
+                      <div class="mt-3 pt-2 border-top">
+                        <button type="button" id="saveSettingsBtn" disabled
+                                class="btn btn-primary btn-sm w-100"
+                                onclick="saveAllSettings()">
+                          <i class="fas fa-save me-1"></i>Сохранить настройки
+                        </button>
                       </div>
                     </div>
                   </div>
@@ -148,9 +157,9 @@
               <i class="fas fa-info-circle me-1 text-primary"></i>Как использовать
             </h5>
             <ul class="list-unstyled mb-0">
-              <li class="mb-1"><i class="fas fa-check text-success me-1"></i>Вставьте ссылку на видео</li>
-              <li class="mb-1"><i class="fas fa-check text-success me-1"></i>Нажмите "Настройки" для выбора папки и формата</li>
-              <li class="mb-1"><i class="fas fa-check text-success me-1"></i>Нажмите Скачать</li>
+              <li class="mb-1"><i class="fas fa-check text-success me-1"></i>Вставьте ссылку на видео (на ютубе её можно получить, нажав 3 точки -> "Поделиться" -> "Копировать")</li>
+              <li class="mb-1"><i class="fas fa-check text-success me-1"></i>Нажмите "Настройки" для выбора папки и формата. Сохраните их, нажав соответствующую кнопку</li>
+              <li class="mb-1"><i class="fas fa-check text-success me-1"></i>Нажмите "Скачать"</li>
               <li class="mb-1"><i class="fas fa-check text-success me-1"></i>Кликните на завершённую загрузку для открытия в проводнике</li>
             </ul>
           </div>

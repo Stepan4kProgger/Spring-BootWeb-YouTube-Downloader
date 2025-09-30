@@ -24,6 +24,7 @@ public class DownloadProgress {
 
     private boolean cancellable = true;
     private boolean pausable = true;
+    private boolean resumable = false;
 
     // Конструктор копирования без указания process
     public DownloadProgress(DownloadProgress other) {
@@ -38,5 +39,6 @@ public class DownloadProgress {
         this.downloadId = other.downloadId;
         this.cancellable = other.cancellable;
         this.pausable = other.pausable;
+        this.resumable = other.resumable;
     }
 }

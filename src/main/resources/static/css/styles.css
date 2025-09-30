@@ -366,6 +366,48 @@ h1, h2, h3, h4, h5, h6 {
   font-size: 1.05rem; /* Добавлено */
 }
 
+#saveSettingsBtn:disabled {
+    cursor: not-allowed;
+    opacity: 0.6;
+}
+
+#saveSettingsBtn.btn-secondary {
+    background-color: #6c757d;
+    border-color: #6c757d;
+}
+
+/* Плавные переходы для кнопки */
+#saveSettingsBtn {
+    transition: all 0.3s ease;
+}
+
+/* Стили для неактивной кнопки скачивания */
+#submitButton:disabled {
+    cursor: not-allowed;
+    opacity: 0.6;
+}
+
+#submitButton.btn-secondary {
+    background-color: #6c757d;
+    border-color: #6c757d;
+}
+
+/* Подсказка при наведении на заблокированную кнопку */
+#submitButton:disabled:hover::after {
+    content: "Сохраните настройки перед скачиванием";
+    position: absolute;
+    bottom: 100%;
+    left: 50%;
+    transform: translateX(-50%);
+    background: #333;
+    color: white;
+    padding: 5px 10px;
+    border-radius: 4px;
+    white-space: nowrap;
+    font-size: 12px;
+    z-index: 1000;
+}
+
 /* Дополнительные стили для лучшей читаемости */
 h5.card-title {
     font-size: 1.25rem; /* Увеличено */
