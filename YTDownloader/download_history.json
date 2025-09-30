@@ -1,0 +1,40 @@
+[ {
+  "url" : "https://youtu.be/dY3YPY2Q-kY",
+  "filename" : "Dota 2 2025 08 11   14 02 25 01.mp4",
+  "status" : "completed",
+  "progress" : 100,
+  "startTime" : "2025-09-30T23:49:19.1718269",
+  "endTime" : "2025-09-30T23:49:29.0184234",
+  "downloadDirectory" : "D:\\Work\\Java\\output",
+  "errorMessage" : null,
+  "downloadId" : "addce3c1-9e99-4bd8-ac3f-c9dccaeb73b8",
+  "cancellable" : true,
+  "pausable" : true,
+  "resumable" : false
+}, {
+  "url" : "https://www.youtube.com/watch?v=8GZUuWPIm_Y",
+  "filename" : "unknown",
+  "status" : "error",
+  "progress" : 0,
+  "startTime" : "2025-09-30T23:52:13.7403164",
+  "endTime" : "2025-09-30T23:52:16.3519355",
+  "downloadDirectory" : "D:\\Work\\Java\\output",
+  "errorMessage" : "Download failed with exit code: 1",
+  "downloadId" : "34e3c157-e4ed-4aa8-bf38-f0f305db758f",
+  "cancellable" : true,
+  "pausable" : true,
+  "resumable" : false
+}, {
+  "url" : "https://www.youtube.com/watch?v=oZGwWxY5uu8",
+  "filename" : "СМЕРТЕЛЬНАЯ ОШИБКА МАШИНИСТА ⧸ Катастрофа в Дровнино разбор.mp4",
+  "status" : "completed",
+  "progress" : 100,
+  "startTime" : "2025-09-30T23:52:22.6278744",
+  "endTime" : "2025-09-30T23:52:41.5516745",
+  "downloadDirectory" : "D:\\Work\\Java\\output",
+  "errorMessage" : null,
+  "downloadId" : "02d1615a-8899-4f13-8cf9-04d508c3f7ab",
+  "cancellable" : true,
+  "pausable" : true,
+  "resumable" : false
+} ]
