@@ -1,6 +1,6 @@
 # RUS | YouTube Downloader Suite
 
-Набор инструментов для удобной загрузки видео с YouTube с использованием технологии **yt-dlp**. Проект состоит из четырех взаимосвязанных компонентов, обеспечивающих полный цикл работы с видео.
+Набор инструментов для удобной загрузки видео с YouTube, VK и других совместимых сайтов с использованием технологии **yt-dlp**. Проект состоит из четырех взаимосвязанных компонентов, обеспечивающих полный цикл работы с видео.
 
 ![Java](https://img.shields.io/badge/Java-21-orange?style=for-the-badge&logo=openjdk)
 ![Spring Boot](https://img.shields.io/badge/Spring%20Boot-3.5.6-green?style=for-the-badge&logo=springboot)
@@ -64,7 +64,7 @@
 
 # ENG | YouTube Downloader Suite
 
-A toolkit for convenient YouTube video downloading using **yt-dlp** technology. The project consists of four interconnected components that provide a complete video processing workflow.
+A toolkit for convenient YouTube, VK and other video downloading using **yt-dlp** technology. The project consists of four interconnected components that provide a complete video processing workflow.
 
 ![Java](https://img.shields.io/badge/Java-21-orange?style=for-the-badge&logo=openjdk)
 ![Spring Boot](https://img.shields.io/badge/Spring%20Boot-4.0-blue?style=for-the-badge&logo=springboot)
