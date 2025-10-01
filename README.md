@@ -133,13 +133,6 @@ The application automatically handles:
 - Download queue management
 - Progress tracking
 
-## 📁 Project Structure
-youtube-downloader-suite/
-├── launcher/ # Main launcher application
-├── updater/ # Auto-update component
-├── web-app/ # Spring Boot web interface
-└── browser-extension/ # Chromium extension
-
 ## 🤝 Support
 
 For issues and feature requests, please check the project documentation or create an issue in the project repository.
