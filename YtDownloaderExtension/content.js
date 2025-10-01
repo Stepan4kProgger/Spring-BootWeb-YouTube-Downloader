@@ -61,32 +61,6 @@ class YouTubeToYtDlpExtension {
                 box-shadow: 0 4px 12px rgba(0,0,0,0.4) !important;
             }
             
-            /* Для первого типа миниатюр */
-            a.yt-lockup-view-model__content-image {
-                position: relative !important;
-            }
-            
-            /* Для второго типа миниатюр - контейнер rich-grid-media */
-            div#thumbnail.style-scope.ytd-rich-grid-media {
-                position: relative !important;
-            }
-            
-            /* Для третьего типа - миниатюры на странице канала */
-            ytd-grid-video-renderer ytd-thumbnail {
-                position: relative !important;
-            }
-            
-            /* Для четвертого типа - миниатюры в плейлистах (включая "Понравившиеся") */
-            ytd-playlist-video-renderer ytd-thumbnail {
-                position: relative !important;
-            }
-            
-            /* Для пятого типа - миниатюры в разделе "История" */
-            ytd-video-renderer ytd-thumbnail {
-                position: relative !important;
-            }
-            
-            /* Стили для уведомлений */
             .yt-dlp-notification {
                 color: white !important;
                 padding: 12px 18px !important;
@@ -115,9 +89,31 @@ class YouTubeToYtDlpExtension {
                 overflow: hidden !important;
             }
             
+            /* Прогресс-уведомление теперь выглядит как информационное */
             .yt-dlp-progress-notification {
                 background: #2196F3 !important;
                 border-color: #1976D2 !important;
+            }
+            
+            /* Стили для различных типов миниатюр */
+            a.yt-lockup-view-model__content-image {
+                position: relative !important;
+            }
+            
+            div#thumbnail.style-scope.ytd-rich-grid-media {
+                position: relative !important;
+            }
+            
+            ytd-grid-video-renderer ytd-thumbnail {
+                position: relative !important;
+            }
+            
+            ytd-playlist-video-renderer ytd-thumbnail {
+                position: relative !important;
+            }
+            
+            ytd-video-renderer ytd-thumbnail {
+                position: relative !important;
             }
         `;
         document.head.appendChild(style);
@@ -289,8 +285,8 @@ class YouTubeToYtDlpExtension {
             const requestId = Date.now().toString();
             this.pendingDownloads.set(requestId, { videoUrl, startTime: Date.now() });
             
-            // Показываем уведомление о начале загрузки с прогрессом
-            const progressNotification = this.showProgressNotification('Отправка видео на скачивание... Сервер обрабатывает запрос...');
+            // Показываем уведомление о начале загрузки - оно автоматически исчезнет через 5 секунд
+            this.showProgressNotification('Отправка видео на скачивание... Сервер обрабатывает запрос...');
             
             chrome.runtime.sendMessage({
                 action: 'DOWNLOAD_VIDEO',
@@ -322,8 +318,8 @@ class YouTubeToYtDlpExtension {
                             false
                         );
                     } else if (errorMsg.includes('Не удалось подключиться к серверу') || 
-                               errorMsg.includes('NetworkError') ||
-                               errorMsg.includes('Failed to fetch')) {
+                            errorMsg.includes('NetworkError') ||
+                            errorMsg.includes('Failed to fetch')) {
                         
                         this.showNotification(
                             'Ошибка подключения к серверу YT-DLP:\n\n' +
@@ -339,12 +335,8 @@ class YouTubeToYtDlpExtension {
                     }
                 }
                 
-                // Закрываем прогресс-уведомление
-                if (progressNotification) {
-                    setTimeout(() => {
-                        progressNotification.remove();
-                    }, 2000);
-                }
+                // УДАЛЕН БЛОК, который удалял прогресс-уведомление через 2 секунды
+                // Теперь прогресс-уведомление автоматически исчезнет через 5 секунд
             });
             
         } catch (error) {
@@ -403,6 +395,21 @@ class YouTubeToYtDlpExtension {
             { opacity: 0, transform: 'translateY(-100%) translateX(0)' },
             { opacity: 1, transform: 'translateY(0) translateX(0)' }
         ], { duration: 300, easing: 'ease-out' });
+
+        // Автоматически скрываем через 2.5 секунды с такой же анимацией, как у обычных уведомлений
+        setTimeout(() => {
+            // Такая же анимация исчезновения, как в createNotificationElement
+            notification.animate([
+                { opacity: 1, transform: 'translateX(0) translateY(0)' },
+                { opacity: 0, transform: 'translateX(100px) translateY(-20px)' }
+            ], { duration: 300, easing: 'ease-in' }).onfinish = () => {
+                notification.remove();
+                
+                if (queueContainer.children.length === 0) {
+                    queueContainer.remove();
+                }
+            };
+        }, 2500); // 2.5 секунды - такой же интервал, как у обычных уведомлений
 
         return notification;
     }
