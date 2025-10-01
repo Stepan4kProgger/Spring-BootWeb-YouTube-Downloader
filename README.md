@@ -3,7 +3,7 @@
 Набор инструментов для удобной загрузки видео с YouTube с использованием технологии **yt-dlp**. Проект состоит из четырех взаимосвязанных компонентов, обеспечивающих полный цикл работы с видео.
 
 ![Java](https://img.shields.io/badge/Java-21-orange?style=for-the-badge&logo=openjdk)
-![Spring Boot](https://img.shields.io/badge/Spring%20Boot-3.0-blue?style=for-the-badge&logo=springboot)
+![Spring Boot](https://img.shields.io/badge/Spring%20Boot-4.0-blue?style=for-the-badge&logo=springboot)
 ![Chromium](https://img.shields.io/badge/Chromium-Extension-green?style=for-the-badge&logo=googlechrome)
 
 ## 🚀 Особенности
