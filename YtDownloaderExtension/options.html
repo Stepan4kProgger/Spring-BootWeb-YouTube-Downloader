@@ -1,0 +1,44 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>YT-DLP Extension Advanced Settings</title>
+    <style>
+        body { font-family: Arial, sans-serif; padding: 20px; max-width: 500px; margin: 0 auto; }
+        .setting { margin: 20px 0; }
+        label { display: block; margin: 5px 0; font-weight: bold; }
+        input, select { width: 100%; padding: 8px; margin: 5px 0; }
+        button { padding: 10px 20px; margin: 5px; }
+        .section { border: 1px solid #ddd; padding: 15px; margin: 10px 0; border-radius: 5px; }
+    </style>
+</head>
+<body>
+    <h2>YT-DLP Extension Settings</h2>
+    
+    <div class="section">
+        <h3>Server Configuration</h3>
+        <div class="setting">
+            <label for="serverUrl">Server URL:</label>
+            <input type="text" id="serverUrl" placeholder="http://localhost:8080">
+        </div>
+    </div>
+    
+    <div class="section">
+        <h3>Download Options</h3>
+        <div class="setting">
+            <label for="defaultFormat">Default Format:</label>
+            <select id="defaultFormat">
+                <option value="">Use server default</option>
+                <option value="best">Best quality</option>
+                <option value="worst">Worst quality</option>
+                <option value="mp4">MP4 format</option>
+                <option value="webm">WebM format</option>
+            </select>
+        </div>
+    </div>
+    
+    <button id="save">Save Settings</button>
+    <button id="reset">Reset to Defaults</button>
+    
+    <script src="options.js"></script>
+</body>
+</html>
