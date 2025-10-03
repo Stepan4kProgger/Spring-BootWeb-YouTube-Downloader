@@ -1,6 +1,7 @@
 package com.example.ytdlp.controller;
 
 import com.example.ytdlp.config.ApplicationConfig;
+import com.example.ytdlp.service.ProgressTrackingService;
 import com.example.ytdlp.utils.model.DownloadProgress;
 import com.example.ytdlp.utils.model.DownloadRequest;
 import com.example.ytdlp.utils.model.DownloadResponse;
@@ -25,6 +26,7 @@ import java.util.*;
 @RequestMapping("/yt-dlp")
 @RequiredArgsConstructor
 public class WebController {
+    private final ProgressTrackingService progressTrackingService;
     private final YtDlpService ytDlpService;
     private final ApplicationConfig appConfig;
 
@@ -40,7 +42,7 @@ public class WebController {
         model.addAttribute("ytdlpVersion", "Загрузка...");
         model.addAttribute("ffmpegVersion", "Загрузка..."); // Добавить эту строку
         model.addAttribute("selectedDirectory", appConfig.getDirectory());
-        model.addAttribute("activeDownloads", ytDlpService.getActiveDownloads());
+        model.addAttribute("activeDownloads", progressTrackingService.getActiveDownloads());
         model.addAttribute("downloadHistory", ytDlpService.getDownloadHistory());
         return "index";
     }
@@ -100,7 +102,7 @@ public class WebController {
         List<DownloadProgress> allDownloads = new ArrayList<>();
 
         // Добавляем активные загрузки
-        allDownloads.addAll(ytDlpService.getActiveDownloads().stream()
+        allDownloads.addAll(new ArrayList<>(progressTrackingService.getActiveDownloads().values()).stream()
                 .map(DownloadProgress::new).toList());
 
         // Добавляем историю загрузок (теперь там только завершенные/ошибки/отмененные)
