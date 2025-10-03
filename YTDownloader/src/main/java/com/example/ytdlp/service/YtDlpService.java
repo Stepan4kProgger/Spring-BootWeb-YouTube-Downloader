@@ -21,10 +21,7 @@ import org.springframework.stereotype.Service;
 import java.io.*;
 import java.net.URLDecoder;
 import java.nio.charset.StandardCharsets;
-import java.nio.file.DirectoryStream;
-import java.nio.file.Files;
-import java.nio.file.Path;
-import java.nio.file.Paths;
+import java.nio.file.*;
 import java.time.LocalDateTime;
 import java.util.*;
 import java.util.concurrent.ConcurrentHashMap;
@@ -41,6 +38,9 @@ public class YtDlpService {
     @Value("${yt-dlp.path}")
     private String ytDlpPath;
 
+    @Value("${ffmpeg.path}")
+    private String ffmpegPath;
+
     @Value("${app.download.directory:D:/downloads}")
     private String defaultDownloadDirectory;
 
@@ -48,6 +48,15 @@ public class YtDlpService {
     private ApplicationConfig appConfig;
 
     private static final String HISTORY_FILE = "download_history.json";
+
+    private static final Set<String> COMPATIBILITY_MODE_QUALITIES = Set.of(
+            "144", "144p", "240", "240p", "360", "360p",
+            "480", "480p", "720", "720p", "1080", "1080p"
+    );
+
+    private static final Set<String> BEST_MODE_QUALITIES = Set.of(
+            "best", "max", "2160", "2160p", "1440", "1440p", "2k", "4k"
+    );
 
     private final Map<String, DownloadProgress> activeDownloads = new ConcurrentHashMap<>();
     private final List<DownloadProgress> downloadHistory = Collections.synchronizedList(new ArrayList<>());
@@ -187,12 +196,46 @@ public class YtDlpService {
         private Date lastModified;
     }
 
+    @Data
+    private static class FormatSelection {
+        final VideoFormatInfo videoFormat;
+        final VideoFormatInfo audioFormat;
+        final String videoUrl;
+        final String audioUrl;
+        final String videoFormatId;
+        final String audioFormatId;
+        final boolean isCombined;
+    }
+
+    @Data
+    public static class VideoFormatInfo {
+        private String format_id;
+        private String ext;
+        private String vcodec;
+        private String acodec;
+        private Integer height;
+        private Integer width;
+        private String format;
+        private String format_note;
+        private Integer abr;
+        private String url;
+        private String protocol;
+    }
+
+    @Data
+    public static class VideoInfo {
+        private String title;
+        private String id;
+        private List<VideoFormatInfo> formats;
+        // добавьте другие поля по необходимости
+    }
+
     public DownloadResponse downloadVideo(DownloadRequest request) {
         String downloadId = UUID.randomUUID().toString();
         DownloadProgress progress = new DownloadProgress();
         progress.setDownloadId(downloadId);
         progress.setUrl(request.getUrl());
-        progress.setStatus("downloading");
+        progress.setStatus("analyzing");
         progress.setProgress(0);
         progress.setStartTime(LocalDateTime.now());
 
@@ -213,22 +256,24 @@ public class YtDlpService {
         log.info("Download ID: {}", downloadId);
         log.info("URL: {}", request.getUrl());
         log.info("Directory: {}", request.getDownloadDirectory());
-        log.info("Format: {}", request.getFormat());
+        log.info("Requested quality: {}", request.getFormat());
+
+        Path videoTempFile = null;
+        Path audioTempFile = null;
+        Path combinedTempFile = null;
+        Path cookiesFile = null;
+        Path finalOutputFile = null;
+        FormatSelection formats = null;
 
         try {
             String targetDirectory = request.getDownloadDirectory();
 
-            // Проверяем существование yt-dlp.exe
-            Path ytDlp = Paths.get(ytDlpPath);
-            if (!Files.exists(ytDlp)) {
-                String errorMsg = "yt-dlp.exe not found at: " + ytDlpPath;
-                log.error(errorMsg);
-                progress.setStatus("error");
-                progress.setErrorMessage(errorMsg);
-                progress.setEndTime(LocalDateTime.now());
-                addToDownloadHistory(progress);
-                activeDownloads.remove(downloadId);
-                return new DownloadResponse(false, null, null, errorMsg);
+            // Проверяем существование yt-dlp.exe и ffmpeg.exe
+            if (!Files.exists(Paths.get(ytDlpPath))) {
+                throw new IOException("yt-dlp.exe not found at: " + ytDlpPath);
+            }
+            if (!Files.exists(Paths.get(ffmpegPath))) {
+                throw new IOException("ffmpeg.exe not found at: " + ffmpegPath);
             }
 
             // Создаем директорию для загрузок, если не существует
@@ -238,212 +283,875 @@ public class YtDlpService {
                 log.info("Created download directory: {}", downloadDir);
             }
 
-            // Формируем команду для выполнения
-            List<String> command = buildCommand(request, ytDlpPath, targetDirectory);
-            log.info("Executing command with {} arguments", command.size());
+            // Шаг 1: Получаем информацию о видео
+            progress.setStatus("analyzing");
+            progress.setProgress(10);
+            VideoInfo videoInfo = getVideoInfo(request);
+            formats = selectCompatibleFormats(videoInfo, request.getFormat());
+            validateSelectedFormats(videoInfo, formats);
 
-            ProcessBuilder processBuilder = new ProcessBuilder(command);
-            processBuilder.redirectErrorStream(true);
-            processBuilder.directory(downloadDir.toFile());
+            // Создаем файл куки если нужно
+            cookiesFile = createCookiesFile(request);
 
-            Process process = processBuilder.start();
-            progress.setProcess(process);
-            activeProcesses.put(downloadId, process);
+            // Генерируем финальное имя файла
+            String finalFilename = generateFinalFilenameFromVideoInfo(videoInfo);
+            finalOutputFile = downloadDir.resolve(finalFilename);
 
-            StringBuilder output = new StringBuilder();
-
-            // Создаем отдельный поток для чтения вывода в реальном времени
-            Thread outputReaderThread = getOutputReaderThread(process, output, progress);
-            outputReaderThread.start();
-
-            // Ждем завершения процесса
-            int exitCode = process.waitFor();
-            outputReaderThread.join();
-
-            String fullOutput = output.toString();
-            log.info("yt-dlp process completed with exit code: {}", exitCode);
-
-            // Убираем из активных процессов
-            activeProcesses.remove(downloadId);
-
-            if (exitCode == 0) {
-                progress.setStatus("completed");
-                progress.setProgress(100);
-                progress.setEndTime(LocalDateTime.now());
-
-                String filename = extractFilenameFromOutput(fullOutput);
-                // Теперь filename уже должен быть финальным именем без идентификаторов
-                progress.setFilename(filename);
-
-                log.info("Download completed successfully. Final filename: {}", filename);
-
-                // СРАЗУ добавляем в историю и удаляем из активных
-                addToDownloadHistory(progress);
-                activeDownloads.remove(downloadId);
-                activeProcesses.remove(downloadId);
-
-                return new DownloadResponse(true, "Download completed successfully",
-                        targetDirectory, filename, null);
-            } else {
-                progress.setStatus("error");
-                progress.setErrorMessage("Download failed with exit code: " + exitCode);
-                progress.setEndTime(LocalDateTime.now());
-
-                String filename = extractFilenameFromOutput(fullOutput);
-                progress.setFilename(filename);
-
-                log.error("Download failed. Exit code: {}, Output: {}", exitCode, fullOutput);
-
-                // СРАЗУ добавляем в историю и удаляем из активных
-                addToDownloadHistory(progress);
-                activeDownloads.remove(downloadId);
-                activeProcesses.remove(downloadId);
-
-                return new DownloadResponse(false, null, targetDirectory, filename,
-                        "Download failed with exit code: " + exitCode + ". Output: " + fullOutput);
+            // ПРОВЕРКА: Если финальный файл уже существует, добавляем суффикс
+            if (Files.exists(finalOutputFile)) {
+                String baseName = finalFilename.substring(0, finalFilename.lastIndexOf('.'));
+                String extension = finalFilename.substring(finalFilename.lastIndexOf('.'));
+                finalFilename = baseName + "_" + System.currentTimeMillis() + extension;
+                finalOutputFile = downloadDir.resolve(finalFilename);
+                log.info("File already exists, using new name: {}", finalFilename);
             }
 
-        } catch (IOException | InterruptedException e) {
-            // При ошибке тоже сразу перемещаем в историю
-            DownloadResponse errorResponse = handleError(downloadId, progress, e, "Download process error");
+            if (formats.isCombined()) {
+                // КОМБИНИРОВАННЫЙ ФОРМАТ: скачиваем готовый MP4
+                log.info("Using COMBINED format download");
+                progress.setStatus("downloading_combined");
+                progress.setProgress(20);
+
+                // Создаем временный файл
+                String tempPrefix = "temp_" + downloadId + "_";
+                combinedTempFile = Files.createTempFile(downloadDir, tempPrefix + "combined", ".mp4");
+
+                // Скачиваем комбинированный формат
+                downloadFormat(request.getUrl(), formats.getVideoFormatId(), formats.getVideoUrl(),
+                        combinedTempFile.toString(), cookiesFile, progress, 20, 90);
+
+                // Перемещаем временный файл в финальный
+                Files.move(combinedTempFile, finalOutputFile, StandardCopyOption.REPLACE_EXISTING);
+
+            } else {
+                // РАЗДЕЛЬНЫЕ ФОРМАТЫ: видео + аудио отдельно
+                log.info("Using SEPARATE formats download");
+
+                // Создаем временные файлы с уникальными именами
+                String tempPrefix = "temp_" + downloadId + "_";
+                videoTempFile = Files.createTempFile(downloadDir, tempPrefix + "video", ".mp4");
+                audioTempFile = Files.createTempFile(downloadDir, tempPrefix + "audio", ".m4a");
+
+                // Шаг 2: Скачиваем видео
+                progress.setStatus("downloading_video");
+                progress.setProgress(30);
+                downloadFormat(request.getUrl(), formats.getVideoFormatId(), formats.getVideoUrl(),
+                        videoTempFile.toString(), cookiesFile, progress, 30, 60);
+
+                // Шаг 3: Скачиваем аудио
+                progress.setStatus("downloading_audio");
+                progress.setProgress(60);
+                downloadFormat(request.getUrl(), formats.getAudioFormatId(), formats.getAudioUrl(),
+                        audioTempFile.toString(), cookiesFile, progress, 60, 90);
+
+                // Шаг 4: Объединяем через FFmpeg
+                progress.setStatus("merging");
+                progress.setProgress(90);
+                mergeWithFfmpeg(videoTempFile.toString(), audioTempFile.toString(),
+                        finalOutputFile.toString());
+            }
+
+            // Устанавливаем результат
+            progress.setStatus("completed");
+            progress.setProgress(100);
+            progress.setFilename(finalFilename);
+            progress.setEndTime(LocalDateTime.now());
+
+            log.info("Download completed successfully. Final filename: {}", finalFilename);
+
+            // Добавляем в историю
+            addToDownloadHistory(progress);
             activeDownloads.remove(downloadId);
-            activeProcesses.remove(downloadId);
-            return errorResponse;
+
+            return new DownloadResponse(true, "Download completed successfully",
+                    targetDirectory, finalFilename, null);
+
         } catch (Exception e) {
-            // При любой другой ошибке
-            DownloadResponse errorResponse = handleError(downloadId, progress, e, "Unexpected download error");
-            activeDownloads.remove(downloadId);
-            activeProcesses.remove(downloadId);
-            return errorResponse;
+            log.error("Download failed: {}", e.getMessage(), e);
+            if (formats != null) {
+                log.error("Failed formats - Video: {}, Audio: {}",
+                        formats.getVideoFormatId(), formats.getAudioFormatId());
+            }
+
+            // ДОПОЛНИТЕЛЬНАЯ ОЧИСТКА при ошибке
+            try {
+                Path downloadDir = Paths.get(request.getDownloadDirectory());
+                cleanupEmptyTempFiles(downloadDir, downloadId);
+            } catch (Exception cleanupEx) {
+                log.warn("Additional cleanup failed: {}", cleanupEx.getMessage());
+            }
+
+            return handleError(downloadId, progress, e, "Download process error");
+        } finally {
+        // Очищаем временные файлы в зависимости от типа загрузки
+        try {
+            if (formats != null && formats.isCombined()) {
+                cleanupTempFiles(combinedTempFile, cookiesFile);
+            } else {
+                cleanupTempFiles(videoTempFile, audioTempFile, cookiesFile);
+            }
+
+            // ДОПОЛНИТЕЛЬНО: очищаем любые оставшиеся пустые временные файлы
+            String targetDirectory = request.getDownloadDirectory();
+            if (targetDirectory != null) {
+                Path downloadDirPath = Paths.get(targetDirectory);
+                cleanupEmptyTempFiles(downloadDirPath, downloadId);
+            }
+
+        } catch (Exception e) {
+            log.warn("Error during temp file cleanup: {}", e.getMessage());
+        }
+
+        // Убедимся, что процесс удален из активных
+        activeProcesses.remove(downloadId);
+    }
+    }
+
+    // Метод для получения информации о видео
+    private VideoInfo getVideoInfo(DownloadRequest request) throws IOException, InterruptedException {
+        List<String> command = buildVideoInfoCommand(request);
+        ProcessBuilder processBuilder = new ProcessBuilder(command);
+
+        StringBuilder output = new StringBuilder();
+        StringBuilder errorOutput = new StringBuilder();
+
+        Process process = processBuilder.start();
+
+        // Читаем stdout
+        try (BufferedReader reader = new BufferedReader(
+                new InputStreamReader(process.getInputStream(), StandardCharsets.UTF_8))) {
+            String line;
+            while ((line = reader.readLine()) != null) {
+                output.append(line);
+            }
+        }
+
+        // Читаем stderr для диагностики
+        try (BufferedReader errorReader = new BufferedReader(
+                new InputStreamReader(process.getErrorStream(), StandardCharsets.UTF_8))) {
+            String line;
+            while ((line = errorReader.readLine()) != null) {
+                errorOutput.append(line).append("\n");
+            }
+        }
+
+        int exitCode = process.waitFor();
+
+        if (exitCode != 0) {
+            log.error("Video info command failed with exit code: {}", exitCode);
+            log.error("Error output: {}", errorOutput.toString());
+            throw new IOException("Failed to get video info, exit code: " + exitCode + ". Error: " + errorOutput.toString());
+        }
+
+        // Проверяем, что вывод не пустой
+        if (output.length() == 0) {
+            throw new IOException("Video info command returned empty output");
+        }
+
+        try {
+            ObjectMapper objectMapper = new ObjectMapper();
+            objectMapper.configure(DeserializationFeature.FAIL_ON_UNKNOWN_PROPERTIES, false);
+            VideoInfo videoInfo = objectMapper.readValue(output.toString(), VideoInfo.class);
+
+            // Логируем основную информацию о видео
+            log.info("Video info retrieved: '{}' (ID: {}), {} formats available",
+                    videoInfo.getTitle(), videoInfo.getId(),
+                    videoInfo.getFormats() != null ? videoInfo.getFormats().size() : 0);
+
+            return videoInfo;
+        } catch (Exception e) {
+            log.error("Failed to parse video info JSON: {}", output.toString());
+            throw new IOException("Failed to parse video info JSON: " + e.getMessage());
         }
     }
 
-    private Thread getOutputReaderThread(Process process, StringBuilder output, DownloadProgress progress) {
-        Thread outputReaderThread = new Thread(() -> {
-            try (BufferedReader reader = new BufferedReader(
-                    new InputStreamReader(process.getInputStream(), StandardCharsets.UTF_8))) {
-                String line;
-                while ((line = reader.readLine()) != null) {
-                    output.append(line).append("\n");
-                    log.info("yt-dlp: {}", line);
-
-                    // Обрабатываем строки в реальном времени для прогресса
-                    if (line.contains("[download]")) {
-                        // Парсим прогресс
-                        int currentProgress = parseProgressFromLine(line);
-                        if (currentProgress > 0) {
-                            progress.setProgress(currentProgress);
-                            log.debug("Download progress: {}%", currentProgress);
-                        }
-
-                        // Обновляем имя файла в реальном времени
-                        String filename;
-                        if (line.contains("Destination:")) {
-                            filename = extractFilename(line, "destination");
-                        } else if (line.contains("has already been downloaded")) {
-                            filename = extractFilename(line, "already_downloaded");
-                        } else {
-                            filename = extractFilename(line, "general");
-                        }
-
-                        if (!filename.equals("unknown")) {
-                            progress.setFilename(filename);
-                            log.info("Detected filename in real-time: {}", filename);
-                        }
-                    }
-
-                    // Также обрабатываем другие паттерны
-                    if (line.contains("Writing") || line.contains("[ffmpeg]") || line.contains("[Merger]")) {
-                        String filename = extractFilename(line, "general");
-                        if (!filename.equals("unknown")) {
-                            progress.setFilename(filename);
-                            log.info("Detected filename from other pattern: {}", filename);
-                        }
-                    }
-                }
-            } catch (IOException e) {
-                log.error("Error reading process output: {}", e.getMessage());
-            }
-        });
-        return outputReaderThread;
-    }
-
-    private List<String> buildCommand(DownloadRequest request, String ytDlpPath, String targetDirectory) {
+    // Команда для получения информации о видео
+    private List<String> buildVideoInfoCommand(DownloadRequest request) throws IOException {
         List<String> command = new ArrayList<>();
         command.add(ytDlpPath);
         command.add(request.getUrl());
 
-        // Добавляем поддержку Unicode
-        command.add("--encoding");
-        command.add("UTF-8");
+        // Добавляем куки если есть
+        if (request.getCookies() != null && !request.getCookies().trim().isEmpty()) {
+            Path cookiesFile = Files.createTempFile("cookies_info_" + System.currentTimeMillis(), ".txt");
+            String formattedCookies = formatCookiesForNetscape(request.getCookies());
+            Files.writeString(cookiesFile, formattedCookies, StandardCharsets.UTF_8);
+            cookiesFile.toFile().deleteOnExit();
 
-        // Логируем информацию о куки
-        boolean hasCookies = request.getCookies() != null && !request.getCookies().trim().isEmpty();
-        log.info("Cookies provided: {}", hasCookies);
-
-        if (hasCookies) {
-            log.info("Raw cookies length: {}", request.getCookies().length());
-            log.info("Raw cookies (first 200 chars): {}",
-                    request.getCookies().length() > 200 ?
-                            request.getCookies().substring(0, 200) + "..." :
-                            request.getCookies());
+            command.add("--cookies");
+            command.add(cookiesFile.toString());
         }
 
-        // Добавляем куки только если они есть
-        if (hasCookies) {
-            try {
-                // Создаем временный файл для куки в правильном формате Netscape
-                Path cookiesFile = Files.createTempFile("youtube_cookies", ".txt");
-
-                // Форматируем куки в правильный формат для Netscape
-                String formattedCookies = formatCookiesForNetscape(request.getCookies());
-                Files.writeString(cookiesFile, formattedCookies, StandardCharsets.UTF_8);
-
-                command.add("--cookies");
-                command.add(cookiesFile.toString());
-
-                // Файл будет автоматически удален после завершения процесса
-                cookiesFile.toFile().deleteOnExit();
-
-                log.info("Using cookies file for download: {}", cookiesFile.toString());
-                log.info("Formatted cookies - lines: {}", formattedCookies.split("\n").length);
-
-            } catch (IOException e) {
-                log.warn("Failed to create cookies file: {}", e.getMessage());
-                // Продолжаем без куки, но логируем ошибку
-            }
-        } else {
-            log.info("No cookies provided, proceeding without authentication");
-        }
-
-        // Добавляем опции качества с поддержкой числовых значений
-        if (request.getFormat() != null && !request.getFormat().trim().isEmpty()) {
-            String format = request.getFormat();
-            command.add("-f");
-
-            // Проверяем, является ли формат числом (разрешением)
-            if (format.matches("\\d+")) {
-                String formatString = String.format("bestvideo[height<=%d][ext=mp4]+bestaudio[ext=m4a]/best", Integer.parseInt(format));
-                command.add(formatString);
-                log.info("Using resolution-based format: {}", formatString);
-            } else {
-                // Используем стандартные значения (worst/best)
-                command.add(format);
-                log.info("Using standard format: {}", format);
-            }
-        } else {
-            log.info("Using default format/quality");
-        }
-
-        command.add("-o");
-        command.add(Paths.get(targetDirectory, "%(title)s.%(ext)s").toString());
-
-        // Добавляем полезные флаги
+        command.add("--dump-json");
         command.add("--no-playlist");
-        command.add("--newline");
 
-        log.info("Final command length: {} arguments", command.size());
+        // ДОБАВИТЬ ЭТИ ПАРАМЕТРЫ ДЛЯ НАДЕЖНОСТИ
+        command.add("--no-check-certificate");
+        command.add("--prefer-insecure");
+        command.add("--force-ipv4");
+        command.add("--socket-timeout");
+        command.add("30");
+
+        log.info("Video info command: {}", String.join(" ", command));
         return command;
+    }
+
+    private FormatSelection selectCompatibleFormats(VideoInfo videoInfo, String requestedQuality) {
+        List<VideoFormatInfo> formats = videoInfo.getFormats();
+
+        if (formats == null) {
+            throw new RuntimeException("No formats found in video info");
+        }
+
+        // Логируем все доступные форматы для отладки
+        log.info("=== AVAILABLE FORMATS ===");
+        formats.forEach(f -> {
+            if (f.getHeight() != null && f.getHeight() <= 1080) {
+                log.info("Format: {} - {}x{} - {} (vcodec: {}, acodec: {}, ext: {})",
+                        f.getFormat_id(), f.getWidth(), f.getHeight(),
+                        f.getFormat_note(), f.getVcodec(), f.getAcodec(), f.getExt());
+            }
+        });
+
+        // Определяем режим работы
+        boolean compatibilityMode = isCompatibilityMode(requestedQuality);
+        Integer targetHeight = parseRequestedQuality(requestedQuality, compatibilityMode);
+
+        log.info("Using {} mode for quality: {} (target height: {})",
+                compatibilityMode ? "COMPATIBILITY" : "MAXIMUM QUALITY",
+                requestedQuality, targetHeight);
+
+        if (compatibilityMode) {
+            // СОВМЕСТИМЫЙ РЕЖИМ - гарантируем работу на приставке
+            return findCompatibleFormats(formats, targetHeight);
+        } else {
+            // РЕЖИМ МАКСИМАЛЬНОГО КАЧЕСТВА - любой формат без ограничений
+            return findMaximumQualityFormats(formats, targetHeight);
+        }
+    }
+
+    // Обновленный парсер качества
+    private Integer parseRequestedQuality(String requestedQuality, boolean compatibilityMode) {
+        if (requestedQuality == null || requestedQuality.trim().isEmpty()) {
+            return compatibilityMode ? 1080 : null; // В совместимом режиме по умолчанию 1080p
+        }
+
+        String quality = requestedQuality.toLowerCase().trim();
+
+        try {
+            if (quality.matches("\\d+")) {
+                int height = Integer.parseInt(quality);
+                if (compatibilityMode) {
+                    // В совместимом режиме ограничиваем 1080p
+                    return Math.min(height, 1080);
+                } else {
+                    // В режиме максимального качества - любое число
+                    return height;
+                }
+            }
+
+            // Обработка строковых обозначений
+            switch (quality) {
+                case "best": case "max":
+                    return null; // null означает "лучшее доступное" без ограничений
+
+                case "2160p": case "2160": case "4k":
+                    return 2160;
+                case "1440p": case "1440": case "2k":
+                    return 1440;
+                case "1080p": case "1080":
+                    return compatibilityMode ? 1080 : 1080;
+                case "720p": case "720":
+                    return 720;
+                case "480p": case "480":
+                    return 480;
+                case "360p": case "360":
+                    return 360;
+                case "240p": case "240":
+                    return 240;
+                case "144p": case "144":
+                    return 144;
+                case "worst":
+                    return compatibilityMode ? 144 : 144;
+                default:
+                    return compatibilityMode ? 1080 : null;
+            }
+        } catch (NumberFormatException e) {
+            log.warn("Invalid quality format: {}, using default", requestedQuality);
+            return compatibilityMode ? 1080 : null;
+        }
+    }
+
+    // Режим максимального качества - без ограничений по совместимости
+    private FormatSelection findMaximumQualityFormats(List<VideoFormatInfo> formats, Integer targetHeight) {
+        log.info("=== MAXIMUM QUALITY MODE ===");
+
+        // Логируем все доступные форматы для анализа
+        formats.forEach(f -> {
+            if (f.getHeight() != null && f.getHeight() >= 1440) {
+                log.info("High quality format: {} - {}x{} - {} (vcodec: {}, acodec: {})",
+                        f.getFormat_id(), f.getWidth(), f.getHeight(),
+                        f.getFormat_note(), f.getVcodec(), f.getAcodec());
+            }
+        });
+
+        // 1. Сначала ищем комбинированные форматы (видео+аудио в одном файле)
+        List<VideoFormatInfo> combinedFormats = formats.stream()
+                .filter(f -> {
+                    // Должен содержать и видео и аудио
+                    String vcodec = f.getVcodec();
+                    String acodec = f.getAcodec();
+                    return vcodec != null && !"none".equals(vcodec) &&
+                            acodec != null && !"none".equals(acodec);
+                })
+                .filter(f -> {
+                    String protocol = f.getProtocol();
+                    return protocol != null && "https".equals(protocol);
+                })
+                .collect(Collectors.toList());
+
+        // Фильтруем по целевому качеству если указано
+        if (targetHeight != null && !combinedFormats.isEmpty()) {
+            combinedFormats = combinedFormats.stream()
+                    .filter(f -> {
+                        Integer height = f.getHeight();
+                        return height != null && height <= targetHeight;
+                    })
+                    .collect(Collectors.toList());
+        }
+
+        // Сортируем комбинированные форматы по качеству (лучшее первое)
+        combinedFormats.sort((f1, f2) -> {
+            Integer h1 = f1.getHeight();
+            Integer h2 = f2.getHeight();
+            h1 = h1 != null ? h1 : 0;
+            h2 = h2 != null ? h2 : 0;
+            return h2.compareTo(h1);
+        });
+
+        if (!combinedFormats.isEmpty()) {
+            VideoFormatInfo bestFormat = combinedFormats.get(0);
+            log.info("Selected MAX QUALITY COMBINED format: {} - {}x{}",
+                    bestFormat.getFormat_id(), bestFormat.getWidth(), bestFormat.getHeight());
+
+            return new FormatSelection(bestFormat, null,
+                    bestFormat.getUrl(), null,
+                    bestFormat.getFormat_id(), null, true);
+        }
+
+        // 2. Если комбинированных нет, ищем раздельные форматы с максимальным качеством
+        log.info("No combined formats found, looking for separate video/audio formats");
+
+        // Ищем видео форматы с максимальным качеством
+        List<VideoFormatInfo> videoFormats = formats.stream()
+                .filter(f -> {
+                    String vcodec = f.getVcodec();
+                    return vcodec != null && !"none".equals(vcodec);
+                })
+                .filter(f -> {
+                    String protocol = f.getProtocol();
+                    return protocol != null && "https".equals(protocol);
+                })
+                .collect(Collectors.toList());
+
+        // Фильтруем видео по целевому качеству
+        if (targetHeight != null && !videoFormats.isEmpty()) {
+            videoFormats = videoFormats.stream()
+                    .filter(f -> {
+                        Integer height = f.getHeight();
+                        return height != null && height <= targetHeight;
+                    })
+                    .collect(Collectors.toList());
+        }
+
+        // Сортируем видео по качеству
+        videoFormats.sort((f1, f2) -> {
+            Integer h1 = f1.getHeight();
+            Integer h2 = f2.getHeight();
+            h1 = h1 != null ? h1 : 0;
+            h2 = h2 != null ? h2 : 0;
+            return h2.compareTo(h1);
+        });
+
+        // Ищем аудио форматы с максимальным качеством
+        List<VideoFormatInfo> audioFormats = formats.stream()
+                .filter(f -> {
+                    String acodec = f.getAcodec();
+                    return acodec != null && !"none".equals(acodec);
+                })
+                .filter(f -> {
+                    String vcodec = f.getVcodec();
+                    return vcodec == null || "none".equals(vcodec);
+                })
+                .filter(f -> {
+                    String protocol = f.getProtocol();
+                    return protocol != null && "https".equals(protocol);
+                })
+                .collect(Collectors.toList());
+
+        // Сортируем аудио по битрейту
+        audioFormats.sort((f1, f2) -> {
+            Integer abr1 = f1.getAbr();
+            Integer abr2 = f2.getAbr();
+            abr1 = abr1 != null ? abr1 : 0;
+            abr2 = abr2 != null ? abr2 : 0;
+            return abr2.compareTo(abr1);
+        });
+
+        if (videoFormats.isEmpty()) {
+            throw new RuntimeException("No video format found for maximum quality");
+        }
+        if (audioFormats.isEmpty()) {
+            throw new RuntimeException("No audio format found for maximum quality");
+        }
+
+        VideoFormatInfo videoFormat = videoFormats.get(0);
+        VideoFormatInfo audioFormat = audioFormats.get(0);
+
+        log.info("Selected MAX QUALITY SEPARATE formats - Video: {}x{} ({}), Audio: {}kbps ({})",
+                videoFormat.getWidth(), videoFormat.getHeight(), videoFormat.getFormat_id(),
+                audioFormat.getAbr(), audioFormat.getFormat_id());
+
+        return new FormatSelection(videoFormat, audioFormat,
+                videoFormat.getUrl(), audioFormat.getUrl(),
+                videoFormat.getFormat_id(), audioFormat.getFormat_id(), false);
+    }
+
+    // Определение режима работы
+    private boolean isCompatibilityMode(String requestedQuality) {
+        if (requestedQuality == null || requestedQuality.trim().isEmpty()) {
+            return true; // По умолчанию - совместимый режим
+        }
+
+        String quality = requestedQuality.toLowerCase().trim();
+
+        // Если качество явно указано как одно из "лучших" - используем режим максимального качества
+        if (BEST_MODE_QUALITIES.contains(quality)) {
+            return false;
+        }
+
+        // Если качество указано числом - проверяем диапазон
+        if (quality.matches("\\d+")) {
+            int height = Integer.parseInt(quality);
+            return height <= 1080; // 1080p и ниже - совместимый режим
+        }
+
+        // По умолчанию - совместимый режим
+        return true;
+    }
+
+
+    // Метод для поиска раздельных совместимых форматов
+    private FormatSelection findCompatibleFormats(List<VideoFormatInfo> formats, Integer targetHeight) {
+        log.info("=== COMPATIBILITY MODE ===");
+        log.info("Looking for formats compatible with set-top box (H.264/AAC, ≤1080p)");
+
+        // Сначала ищем комбинированные форматы (видео+аудио в одном) с H.264 и AAC
+        List<VideoFormatInfo> combinedFormats = formats.stream()
+                .filter(f -> {
+                    // Проверяем контейнер
+                    String ext = f.getExt();
+                    if (!"mp4".equals(ext)) return false;
+
+                    // Проверяем видео кодек (H.264)
+                    String vcodec = f.getVcodec();
+                    if (vcodec == null || "none".equals(vcodec)) return false;
+                    if (!vcodec.contains("avc1") && !vcodec.contains("h264")) return false;
+
+                    // Проверяем аудио кодек (AAC)
+                    String acodec = f.getAcodec();
+                    if (acodec == null || "none".equals(acodec)) return false;
+                    if (!acodec.contains("mp4a") && !acodec.contains("aac")) return false;
+
+                    // Проверяем разрешение
+                    Integer height = f.getHeight();
+                    if (height == null || height > 1080) return false;
+
+                    // Проверяем протокол
+                    String protocol = f.getProtocol();
+                    return "https".equals(protocol) || "http".equals(protocol);
+                })
+                .collect(Collectors.toList());
+
+        // Фильтруем по целевому качеству
+        if (targetHeight != null && !combinedFormats.isEmpty()) {
+            combinedFormats = combinedFormats.stream()
+                    .filter(f -> {
+                        Integer height = f.getHeight();
+                        return height != null && height <= targetHeight;
+                    })
+                    .collect(Collectors.toList());
+        }
+
+        // Сортируем комбинированные форматы по качеству (лучшее первое)
+        combinedFormats.sort((f1, f2) -> {
+            Integer h1 = f1.getHeight();
+            Integer h2 = f2.getHeight();
+            h1 = h1 != null ? h1 : 0;
+            h2 = h2 != null ? h2 : 0;
+            return h2.compareTo(h1);
+        });
+
+        if (!combinedFormats.isEmpty()) {
+            VideoFormatInfo bestFormat = combinedFormats.get(0);
+            log.info("Selected COMBINED format: {} - {}x{} - {} (vcodec: {}, acodec: {})",
+                    bestFormat.getFormat_id(), bestFormat.getWidth(), bestFormat.getHeight(),
+                    bestFormat.getFormat_note(), bestFormat.getVcodec(), bestFormat.getAcodec());
+
+            return new FormatSelection(bestFormat, null,
+                    bestFormat.getUrl(), null,
+                    bestFormat.getFormat_id(), null, true);
+        }
+
+        log.info("No combined formats found, looking for separate video/audio formats");
+
+        // Ищем раздельные видео форматы с H.264
+        List<VideoFormatInfo> videoFormats = formats.stream()
+                .filter(f -> {
+                    String ext = f.getExt();
+                    if (!"mp4".equals(ext)) return false;
+
+                    String vcodec = f.getVcodec();
+                    if (vcodec == null || "none".equals(vcodec)) return false;
+                    if (!vcodec.contains("avc1") && !vcodec.contains("h264")) return false;
+
+                    String protocol = f.getProtocol();
+                    if (!"https".equals(protocol) && !"http".equals(protocol)) return false;
+
+                    Integer height = f.getHeight();
+                    if (height == null || height > 1080) return false;
+
+                    // Должен быть видео-only
+                    String acodec = f.getAcodec();
+                    return acodec == null || "none".equals(acodec);
+                })
+                .collect(Collectors.toList());
+
+        // Фильтруем видео по качеству
+        if (targetHeight != null && !videoFormats.isEmpty()) {
+            videoFormats = videoFormats.stream()
+                    .filter(f -> {
+                        Integer height = f.getHeight();
+                        return height != null && height <= targetHeight;
+                    })
+                    .collect(Collectors.toList());
+        }
+
+        // Сортируем видео по качеству (лучшее первое)
+        videoFormats.sort((f1, f2) -> {
+            Integer h1 = f1.getHeight();
+            Integer h2 = f2.getHeight();
+            h1 = h1 != null ? h1 : 0;
+            h2 = h2 != null ? h2 : 0;
+            return h2.compareTo(h1);
+        });
+
+        // Ищем аудио форматы с AAC в M4A контейнере
+        List<VideoFormatInfo> audioFormats = formats.stream()
+                .filter(f -> {
+                    String ext = f.getExt();
+                    if (!"m4a".equals(ext)) return false;
+
+                    String acodec = f.getAcodec();
+                    if (acodec == null) return false;
+                    if (!acodec.contains("mp4a") && !acodec.contains("aac")) return false;
+
+                    String protocol = f.getProtocol();
+                    if (!"https".equals(protocol) && !"http".equals(protocol)) return false;
+
+                    // Должен быть аудио-only
+                    String vcodec = f.getVcodec();
+                    return vcodec == null || "none".equals(vcodec);
+                })
+                .collect(Collectors.toList());
+
+        // Сортируем аудио по битрейту (лучшее первое)
+        audioFormats.sort((f1, f2) -> {
+            Integer abr1 = f1.getAbr();
+            Integer abr2 = f2.getAbr();
+            abr1 = abr1 != null ? abr1 : 0;
+            abr2 = abr2 != null ? abr2 : 0;
+            return abr2.compareTo(abr1);
+        });
+
+        if (videoFormats.isEmpty()) {
+            throw new RuntimeException("No compatible video format (H.264, MP4, ≤1080p) found");
+        }
+        if (audioFormats.isEmpty()) {
+            throw new RuntimeException("No compatible audio format (AAC, M4A) found");
+        }
+
+        VideoFormatInfo videoFormat = videoFormats.get(0);
+        VideoFormatInfo audioFormat = audioFormats.get(0);
+
+        log.info("SELECTED SEPARATE FORMATS - Video: {}x{} ({}), Audio: {}kbps ({})",
+                videoFormat.getWidth(), videoFormat.getHeight(), videoFormat.getFormat_id(),
+                audioFormat.getAbr(), audioFormat.getFormat_id());
+
+        return new FormatSelection(videoFormat, audioFormat,
+                videoFormat.getUrl(), audioFormat.getUrl(),
+                videoFormat.getFormat_id(), audioFormat.getFormat_id(), false);
+    }
+
+    // Скачивание отдельного формата
+    private void downloadFormat(String url, String formatId, String formatUrl,
+                                String outputFile, Path cookiesFile,
+                                DownloadProgress progress, int startProgress, int endProgress)
+            throws IOException, InterruptedException {
+
+        // ПРОВЕРКА: Если файл уже существует и он пустой, удаляем его
+        File output = new File(outputFile);
+        if (output.exists() && output.length() == 0) {
+            log.warn("Found empty existing file, deleting: {}", outputFile);
+            Files.deleteIfExists(Paths.get(outputFile));
+        }
+
+        List<String> command = new ArrayList<>();
+        command.add(ytDlpPath);
+        command.add(url);
+        command.add("-f");
+        command.add(formatId);
+        command.add("--no-playlist");
+        command.add("-o");
+        command.add(outputFile);
+
+        // МИНИМАЛЬНЫЙ НАБОР ПАРАМЕТРОВ:
+        command.add("--no-overwrites");   // Не перезаписывать существующие файлы
+        command.add("--continue");        // Продолжать частично скачанные файлы
+
+        // Добавить retry логику
+        command.add("--retries");
+        command.add("10");
+
+        if (cookiesFile != null) {
+            command.add("--cookies");
+            command.add(cookiesFile.toString());
+        }
+
+        log.info("Download command: {}", String.join(" ", command));
+
+        ProcessBuilder processBuilder = new ProcessBuilder(command);
+        Process process = processBuilder.start();
+        activeProcesses.put(progress.getDownloadId(), process);
+
+        // Чтение вывода для прогресса
+        Thread progressThread = new Thread(() -> {
+            try (BufferedReader reader = new BufferedReader(
+                    new InputStreamReader(process.getInputStream(), StandardCharsets.UTF_8))) {
+                String line;
+                while ((line = reader.readLine()) != null) {
+                    log.debug("Download output: {}", line);
+                    if (line.contains("[download]")) {
+                        int currentProgress = parseProgressFromLine(line);
+                        if (currentProgress > 0) {
+                            // Масштабируем прогресс в диапазон [startProgress, endProgress]
+                            int scaledProgress = startProgress + (currentProgress * (endProgress - startProgress)) / 100;
+                            progress.setProgress(Math.min(scaledProgress, endProgress));
+                        }
+                    }
+                }
+            } catch (IOException e) {
+                log.error("Error reading download progress: {}", e.getMessage());
+            }
+        });
+        progressThread.start();
+
+        // ТАКЖЕ читаем stderr для диагностики ошибок
+        Thread errorThread = new Thread(() -> {
+            try (BufferedReader reader = new BufferedReader(
+                    new InputStreamReader(process.getErrorStream(), StandardCharsets.UTF_8))) {
+                String line;
+                while ((line = reader.readLine()) != null) {
+                    log.warn("Download error: {}", line);
+                    if (line.contains("ERROR") || line.contains("error")) {
+                        log.error("Critical download error: {}", line);
+                    }
+                }
+            } catch (IOException e) {
+                log.error("Error reading download errors: {}", e.getMessage());
+            }
+        });
+        errorThread.start();
+
+        int exitCode = process.waitFor();
+        progressThread.join();
+        errorThread.join();
+        activeProcesses.remove(progress.getDownloadId());
+
+        // ПРОВЕРКА: Убедимся, что файл действительно скачан и не пустой
+        File downloadedFile = new File(outputFile);
+        if (!downloadedFile.exists()) {
+            throw new IOException("Downloaded file does not exist: " + outputFile);
+        }
+
+        if (downloadedFile.length() == 0) {
+            // Файл пустой - удаляем его и бросаем исключение
+            Files.deleteIfExists(Paths.get(outputFile));
+            throw new IOException("Downloaded file is empty (0 bytes): " + outputFile);
+        }
+
+        log.info("Download completed successfully: {} (size: {} bytes)",
+                outputFile, downloadedFile.length());
+
+        if (exitCode != 0) {
+            throw new IOException("Download failed with exit code: " + exitCode);
+        }
+    }
+
+    private void validateFormatAvailability(VideoInfo videoInfo, FormatSelection formats) throws IOException {
+        log.info("Validating format availability...");
+
+        // Проверяем видео формат
+        if (formats.getVideoFormat() != null) {
+            VideoFormatInfo videoFormat = formats.getVideoFormat();
+            if (videoFormat.getUrl() == null || videoFormat.getUrl().trim().isEmpty()) {
+                throw new IOException("Video format " + videoFormat.getFormat_id() + " has no URL");
+            }
+
+            // Проверяем, что формат действительно доступен в списке
+            boolean formatExists = videoInfo.getFormats().stream()
+                    .anyMatch(f -> f.getFormat_id().equals(videoFormat.getFormat_id())
+                            && f.getUrl() != null && !f.getUrl().trim().isEmpty());
+
+            if (!formatExists) {
+                throw new IOException("Video format " + videoFormat.getFormat_id() + " is not available");
+            }
+
+            log.info("Video format {} validated: {}", videoFormat.getFormat_id(), videoFormat.getFormat_note());
+        }
+
+        // Проверяем аудио формат
+        if (formats.getAudioFormat() != null) {
+            VideoFormatInfo audioFormat = formats.getAudioFormat();
+            if (audioFormat.getUrl() == null || audioFormat.getUrl().trim().isEmpty()) {
+                throw new IOException("Audio format " + audioFormat.getFormat_id() + " has no URL");
+            }
+
+            boolean formatExists = videoInfo.getFormats().stream()
+                    .anyMatch(f -> f.getFormat_id().equals(audioFormat.getFormat_id())
+                            && f.getUrl() != null && !f.getUrl().trim().isEmpty());
+
+            if (!formatExists) {
+                throw new IOException("Audio format " + audioFormat.getFormat_id() + " is not available");
+            }
+
+            log.info("Audio format {} validated: {}", audioFormat.getFormat_id(), audioFormat.getFormat_note());
+        }
+    }
+
+    // Объединение через FFmpeg
+    private void mergeWithFfmpeg(String videoFile, String audioFile, String outputFile)
+            throws IOException, InterruptedException {
+
+        List<String> command = new ArrayList<>();
+        command.add(ffmpegPath);
+        command.add("-i");
+        command.add(videoFile);
+        command.add("-i");
+        command.add(audioFile);
+        command.add("-c:v");
+        command.add("copy"); // Копируем видео поток без изменений
+        command.add("-c:a");
+        command.add("copy"); // Копируем аудио поток без изменений
+        command.add("-y"); // Перезаписываем выходной файл
+        command.add(outputFile);
+
+        log.info("Merging with FFmpeg (copy streams): {} + {} -> {}", videoFile, audioFile, outputFile);
+        log.info("FFmpeg command: {}", String.join(" ", command));
+
+        ProcessBuilder processBuilder = new ProcessBuilder(command);
+        Process process = processBuilder.start();
+
+        // Читаем вывод FFmpeg для диагностики
+        Thread outputReader = new Thread(() -> {
+            try (BufferedReader reader = new BufferedReader(
+                    new InputStreamReader(process.getErrorStream(), StandardCharsets.UTF_8))) {
+                String line;
+                while ((line = reader.readLine()) != null) {
+                    if (line.contains("error") || line.contains("Error") || line.contains("ERROR")) {
+                        log.error("FFmpeg error: {}", line);
+                    } else {
+                        log.debug("FFmpeg: {}", line);
+                    }
+                }
+            } catch (IOException e) {
+                log.error("Error reading FFmpeg output: {}", e.getMessage());
+            }
+        });
+        outputReader.start();
+
+        int exitCode = process.waitFor();
+        outputReader.join();
+
+        if (exitCode != 0) {
+            throw new IOException("FFmpeg merge failed with exit code: " + exitCode);
+        }
+
+        log.info("FFmpeg merge completed successfully - streams copied without re-encoding");
+    }
+
+    // Генерация финального имени файла
+    private String generateFinalFilenameFromVideoInfo(VideoInfo videoInfo) {
+        String title = videoInfo.getTitle();
+        if (title == null) {
+            title = "video_" + System.currentTimeMillis();
+        }
+        title = title.replaceAll("[\\\\/:*?\"<>|]", "_");
+        return title + ".mp4";
+    }
+
+    // Создание файла куки
+    private Path createCookiesFile(DownloadRequest request) throws IOException {
+        if (request.getCookies() == null || request.getCookies().trim().isEmpty()) {
+            return null;
+        }
+
+        Path cookiesFile = Files.createTempFile("cookies_download_" + System.currentTimeMillis(), ".txt");
+        String formattedCookies = formatCookiesForNetscape(request.getCookies());
+        Files.writeString(cookiesFile, formattedCookies, StandardCharsets.UTF_8);
+        cookiesFile.toFile().deleteOnExit();
+
+        log.info("Created cookies file with {} bytes", Files.size(cookiesFile));
+        return cookiesFile;
+    }
+
+    // Очистка временных файлов
+    private void cleanupTempFiles(Path... files) {
+        for (Path file : files) {
+            if (file != null) {
+                try {
+                    // Проверяем, существует ли файл и не пустой ли он
+                    if (Files.exists(file)) {
+                        long fileSize = Files.size(file);
+                        if (fileSize == 0) {
+                            log.info("Deleting empty temp file: {}", file);
+                        } else {
+                            log.debug("Deleting temp file: {} (size: {} bytes)", file, fileSize);
+                        }
+                        Files.deleteIfExists(file);
+                    }
+                } catch (IOException e) {
+                    log.warn("Failed to delete temp file: {}", file, e);
+                }
+            }
+        }
+    }
+
+    // Новый метод для очистки пустых временных файлов
+    private void cleanupEmptyTempFiles(Path downloadDir, String downloadId) {
+        try {
+            String tempPrefix = "temp_" + downloadId + "_";
+            try (DirectoryStream<Path> stream = Files.newDirectoryStream(downloadDir, tempPrefix + "*")) {
+                for (Path tempFile : stream) {
+                    if (Files.size(tempFile) == 0) {
+                        Files.deleteIfExists(tempFile);
+                        log.info("Deleted empty temp file: {}", tempFile);
+                    }
+                }
+            }
+        } catch (IOException e) {
+            log.warn("Could not cleanup empty temp files: {}", e.getMessage());
+        }
     }
 
     private String formatCookiesForNetscape(String rawCookies) {
@@ -491,7 +1199,35 @@ public class YtDlpService {
         return formatted.toString();
     }
 
-    public String getVersion() {
+    private void validateSelectedFormats(VideoInfo videoInfo, FormatSelection formats) throws IOException {
+        log.info("Validating selected formats...");
+
+        if (formats.isCombined()) {
+            // Проверяем комбинированный формат
+            VideoFormatInfo format = formats.getVideoFormat();
+            if (format.getUrl() == null || format.getUrl().trim().isEmpty()) {
+                throw new IOException("Combined format " + format.getFormat_id() + " has no URL");
+            }
+            log.info("Validated combined format: {} - {}", format.getFormat_id(), format.getFormat_note());
+        } else {
+            // Проверяем видео формат
+            VideoFormatInfo videoFormat = formats.getVideoFormat();
+            if (videoFormat.getUrl() == null || videoFormat.getUrl().trim().isEmpty()) {
+                throw new IOException("Video format " + videoFormat.getFormat_id() + " has no URL");
+            }
+
+            // Проверяем аудио формат
+            VideoFormatInfo audioFormat = formats.getAudioFormat();
+            if (audioFormat.getUrl() == null || audioFormat.getUrl().trim().isEmpty()) {
+                throw new IOException("Audio format " + audioFormat.getFormat_id() + " has no URL");
+            }
+
+            log.info("Validated separate formats - Video: {}, Audio: {}",
+                    videoFormat.getFormat_id(), audioFormat.getFormat_id());
+        }
+    }
+
+    public String getYtDlpVersion() {
         try {
             ProcessBuilder processBuilder = new ProcessBuilder(ytDlpPath, "--version");
             Process process = processBuilder.start();
@@ -506,6 +1242,29 @@ public class YtDlpService {
             return "Ошибка загрузки: " + e.getMessage();
         } catch (Exception e) {
             log.error("Unexpected error getting version: {}", e.getMessage(), e);
+            return "Неизвестная версия";
+        }
+    }
+
+    // Метод получения версии ffmpeg
+    public String getFfmpegVersion() {
+        try {
+            ProcessBuilder processBuilder = new ProcessBuilder(ffmpegPath, "-version");
+            Process process = processBuilder.start();
+
+            try (BufferedReader reader = new BufferedReader(
+                    new InputStreamReader(process.getInputStream(), StandardCharsets.UTF_8))) {
+                String versionLine = reader.readLine();
+                if (versionLine != null && versionLine.contains("ffmpeg version")) {
+                    return versionLine.replace("ffmpeg version", "").trim().split(" ")[0];
+                }
+                return versionLine != null ? versionLine : "Неизвестная версия";
+            }
+        } catch (IOException e) {
+            log.error("Error getting ffmpeg version: {}", e.getMessage(), e);
+            return "Ошибка загрузки: " + e.getMessage();
+        } catch (Exception e) {
+            log.error("Unexpected error getting ffmpeg version: {}", e.getMessage(), e);
             return "Неизвестная версия";
         }
     }

@@ -129,7 +129,7 @@ public class YtDlpController {
 
     @GetMapping("/version")
     public ResponseEntity<String> getVersion() {
-        return ResponseEntity.ok("yt-dlp version: " + ytDlpService.getVersion());
+        return ResponseEntity.ok("yt-dlp version: " + ytDlpService.getYtDlpVersion());
     }
 
     @GetMapping("/health")

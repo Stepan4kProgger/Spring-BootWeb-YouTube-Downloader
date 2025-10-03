@@ -37,16 +37,24 @@ public class WebController {
 
     @GetMapping("/")
     public String home(Model model) {
-        model.addAttribute("version", "Загрузка...");
+        model.addAttribute("ytdlpVersion", "Загрузка...");
+        model.addAttribute("ffmpegVersion", "Загрузка..."); // Добавить эту строку
+        model.addAttribute("selectedDirectory", appConfig.getDirectory());
         model.addAttribute("activeDownloads", ytDlpService.getActiveDownloads());
         model.addAttribute("downloadHistory", ytDlpService.getDownloadHistory());
         return "index";
     }
 
-    @GetMapping("/version")
+    @GetMapping("/ytdlp-version")
     @ResponseBody
-    public String getVersion() {
-        return ytDlpService.getVersion();
+    public String getYtDlpVersion() {
+        return ytDlpService.getYtDlpVersion();
+    }
+
+    @GetMapping("/ffmpeg-version")
+    @ResponseBody
+    public String getFfmpegVersion() {
+        return ytDlpService.getFfmpegVersion();
     }
 
     @GetMapping("/browse")
@@ -195,7 +203,10 @@ public class WebController {
                     URLDecoder.decode(filename, StandardCharsets.UTF_8),
                     URLDecoder.decode(directory, StandardCharsets.UTF_8)
             );
-            return ResponseEntity.ok("Проводник открыт с файлом: " + filename);
+
+            // Декодируем имя файла для красивого отображения
+            String decodedFilename = URLDecoder.decode(filename, StandardCharsets.UTF_8);
+            return ResponseEntity.ok("Файл открыт в проводнике: " + decodedFilename);
         } catch (Exception e) {
             return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR)
                     .body("Ошибка открытия проводника: " + e.getMessage());

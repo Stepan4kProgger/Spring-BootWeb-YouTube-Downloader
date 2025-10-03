@@ -131,13 +131,20 @@ public class TrayManager {
     }
 
     private boolean confirmShutdown() {
-        return JOptionPane.YES_OPTION == JOptionPane.showConfirmDialog(
+        Object[] options = {"Да", "Нет"};
+
+        int result = JOptionPane.showOptionDialog(
                 null,
                 "Вы уверены, что хотите закрыть приложение?\nВсе активные загрузки будут остановлены.",
                 "Подтверждение закрытия",
                 JOptionPane.YES_NO_OPTION,
-                JOptionPane.QUESTION_MESSAGE
+                JOptionPane.QUESTION_MESSAGE,
+                null,
+                options,
+                options[1]
         );
+
+        return result == JOptionPane.YES_OPTION; // 0 = Да, 1 = Нет
     }
 
     private void performGracefulShutdown() throws Exception {
