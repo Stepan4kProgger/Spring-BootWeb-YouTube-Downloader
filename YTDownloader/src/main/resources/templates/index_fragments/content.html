@@ -24,7 +24,11 @@
       </h1>
       <p class="lead text-muted mb-1">Скачивайте видео и аудио с различных платформ</p>
       <small class="text-muted">Версия yt-dlp.exe:
-        <span id="versionText" class="version-loading" th:text="${version}">Загрузка...</span>
+        <span id="ytdlpVersionText" class="version-loading" th:text="${ytdlpVersion}">Загрузка...</span>
+      </small>
+      <br>
+      <small class="text-muted">Версия ffmpeg.exe:
+        <span id="ffmpegVersionText" class="version-loading" th:text="${ffmpegVersion}">Загрузка...</span>
       </small>
     </div>
 

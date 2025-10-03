@@ -68,10 +68,10 @@
 
     // Функция для загрузки версии yt-dlp
     function loadYtDlpVersion() {
-        const versionElement = document.getElementById('versionText');
+        const versionElement = document.getElementById('ytdlpVersionText');
         const spinnerElement = document.getElementById('versionSpinner');
 
-        fetch('/yt-dlp/version')
+        fetch('/yt-dlp/ytdlp-version')
             .then(response => {
                 if (!response.ok) {
                     throw new Error('Ошибка сети: ' + response.status);
@@ -101,6 +101,32 @@
 
                 // Пытаемся снова через 5 секунд
                 setTimeout(loadYtDlpVersion, 5000);
+            });
+    }
+
+    function loadFfmpegVersion() {
+        const versionElement = document.getElementById('ffmpegVersionText');
+
+        fetch('/yt-dlp/ffmpeg-version')
+            .then(response => {
+                if (!response.ok) {
+                    throw new Error('Ошибка сети: ' + response.status);
+                }
+                return response.text();
+            })
+            .then(version => {
+                versionElement.textContent = version;
+                versionElement.classList.remove('version-loading');
+                versionElement.classList.add('version-success');
+            })
+            .catch(error => {
+                console.error('Error loading ffmpeg version:', error);
+                versionElement.textContent = 'Ошибка загрузки версии';
+                versionElement.classList.remove('version-loading');
+                versionElement.classList.add('version-error');
+
+                // Пытаемся снова через 5 секунд
+                setTimeout(loadFfmpegVersion, 5000);
             });
     }
 
@@ -135,11 +161,23 @@
         })
         .then(message => {
             console.log('Проводник открыт:', message);
-            showNotification(message, 'success');
+
+            // Декодируем имя файла из URL-encoded формата
+            const decodedFilename = decodeURIComponent(filename);
+
+            // Создаем короткое и информативное сообщение
+            const shortMessage = `Проводник открыт с файлом: ${decodedFilename}`;
+            showNotification(shortMessage, 'success');
         })
         .catch(error => {
             console.error('Ошибка открытия проводника:', error);
-            showNotification('Ошибка: ' + error.message, 'error');
+
+            // Извлекаем только основное сообщение об ошибке
+            const errorMessage = error.message.includes('Проводник открыт с файлом:')
+                ? error.message.split('Проводник открыт с файлом:')[1]
+                : error.message;
+
+            showNotification('Ошибка: ' + errorMessage, 'error');
         });
     }
 
@@ -340,14 +378,33 @@
     }
 
     function renderProgressBar(status, progress, errorMessage) {
-        if (status === 'downloading') {
+        if (status === 'downloading' || status === 'downloading_combined' ||
+            status === 'downloading_video' || status === 'downloading_audio') {
             return `
                 <div class="progress mb-2" style="height: 8px;">
                     <div class="progress-bar progress-bar-striped progress-bar-animated bg-warning"
                          style="width: ${progress}%">
                     </div>
                 </div>
-                <small class="text-muted">${progress}%</small>
+                <small class="text-warning">${progress}% - Скачивается</small>
+            `;
+        } else if (status === 'analyzing') {
+            return `
+                <div class="progress mb-2" style="height: 8px;">
+                    <div class="progress-bar progress-bar-striped progress-bar-animated bg-warning"
+                         style="width: ${progress}%">
+                    </div>
+                </div>
+                <small class="text-warning">${progress}% - Анализ видео</small>
+            `;
+        } else if (status === 'merging') {
+            return `
+                <div class="progress mb-2" style="height: 8px;">
+                    <div class="progress-bar progress-bar-striped progress-bar-animated bg-warning"
+                         style="width: ${progress}%">
+                    </div>
+                </div>
+                <small class="text-warning">${progress}% - Объединение потоков</small>
             `;
         } else if (status === 'paused') {
             return `
@@ -370,19 +427,30 @@
 
     function getStatusBadgeClass(status) {
         switch(status) {
-            case 'downloading': return 'bg-warning';
+            case 'downloading':
+            case 'downloading_combined':
+            case 'downloading_video':
+            case 'downloading_audio':
+            case 'analyzing':
+            case 'merging':
+                return 'bg-warning'; // Желтый цвет для активных процессов
             case 'completed': return 'bg-success';
             case 'error': return 'bg-danger';
             case 'paused': return 'bg-info';
             case 'cancelled': return 'bg-secondary';
-            default: return 'bg-secondary';
+            default: return 'bg-warning'; // По умолчанию желтый
         }
     }
 
     // Вспомогательная функция для отображения текста статуса
     function getStatusText(status) {
         const statusMap = {
-            'downloading': 'Загружается',
+            'analyzing': 'Анализ',
+            'downloading_combined': 'Скачивание',
+            'downloading_video': 'Скачивание видео',
+            'downloading_audio': 'Скачивание аудио',
+            'merging': 'Объединение',
+            'downloading': 'Скачивается',
             'completed': 'Завершено',
             'error': 'Ошибка',
             'paused': 'Приостановлено',
@@ -410,6 +478,12 @@
 
     // Функция для показа уведомлений
     function showNotification(message, type) {
+        // Обрезаем слишком длинные сообщения
+        let displayMessage = message;
+        if (message.length > 100) {
+            displayMessage = message.substring(0, 100) + '...';
+        }
+
         // Удаляем предыдущие уведомления того же типа
         const existingNotifications = document.querySelectorAll('.notification');
         existingNotifications.forEach(notification => {
@@ -423,7 +497,7 @@
         notification.innerHTML = `
             <div class="d-flex align-items-center">
                 <i class="fas ${type === 'success' ? 'fa-check-circle' : 'fa-exclamation-circle'} me-2"></i>
-                <span>${message}</span>
+                <span>${displayMessage}</span>
                 <button type="button" class="btn-close ms-auto" onclick="closeNotification(this)"></button>
             </div>
         `;
@@ -474,6 +548,7 @@
         }
     });
 
+
     // Функция для обновления состояния кнопки отправки
     function updateSubmitButton() {
         const url = document.getElementById('url').value;
@@ -481,12 +556,16 @@
         const submitButton = document.getElementById('submitButton');
         const hasUnsavedSettings = checkSettingsChanges(); // Проверяем несохраненные настройки
 
-        // Кнопка активна только если URL и директория заполнены И нет несохраненных настроек
-        submitButton.disabled = !url || !directory || hasUnsavedSettings;
+        // Кнопка активна только если:
+        // 1. URL и директория заполнены
+        // 2. НЕТ несохраненных настроек (все настройки сохранены)
+        const shouldBeEnabled = url && directory && !hasUnsavedSettings;
+
+        submitButton.disabled = !shouldBeEnabled;
 
         // Визуальная обратная связь
         if (hasUnsavedSettings) {
-            submitButton.title = "Сохраните настройки перед скачиванием";
+            submitButton.title = "Сначала сохраните настройки";
             submitButton.classList.remove('btn-primary');
             submitButton.classList.add('btn-secondary');
         } else {
@@ -499,6 +578,8 @@
     // Check URL and directory inputs
     document.getElementById('url').addEventListener('input', updateSubmitButton);
     document.getElementById('downloadDirectory').addEventListener('input', updateSubmitButton);
+    document.getElementById('clearHistoryOnStartup').addEventListener('change', updateSubmitButton);
+    document.getElementById('quality').addEventListener('change', updateSubmitButton);
 
     // Функция для загрузки всех настроек
     function loadAllSettings() {
@@ -508,7 +589,6 @@
                 // Загружаем настройки в форму
                 if (settings.directory) {
                     document.getElementById('downloadDirectory').value = settings.directory;
-                    updateSubmitButton();
                 }
 
                 document.getElementById('clearHistoryOnStartup').checked =
@@ -520,11 +600,15 @@
 
                 // После загрузки настроек инициализируем отслеживание изменений
                 initSettingsTracking();
+
+                // Обновляем кнопку Скачать после загрузки всех настроек
+                setTimeout(updateSubmitButton, 100);
             })
             .catch(error => {
                 console.error('Error loading settings:', error);
                 // Все равно инициализируем отслеживание, даже если настройки не загрузились
                 initSettingsTracking();
+                updateSubmitButton(); // Обновляем кнопку даже при ошибке
             });
     }
 
@@ -561,7 +645,7 @@
                 showNotification(message, 'success');
                 captureOriginalSettings();
                 updateSaveButtonState();
-                updateSubmitButton();
+                updateSubmitButton(); // ВАЖНО: обновляем кнопку Скачать после сохранения
 
                 setTimeout(() => {
                     saveButton.innerHTML = '<i class="fas fa-save me-1"></i>Сохранить настройки';
@@ -572,7 +656,7 @@
                 showNotification('Ошибка сохранения настроек: ' + error.message, 'error');
                 saveButton.disabled = false;
                 saveButton.innerHTML = '<i class="fas fa-save me-1"></i>Сохранить настройки';
-                updateSubmitButton();
+                updateSubmitButton(); // Обновляем кнопку даже при ошибке
             });
         }
     }
@@ -620,6 +704,7 @@
         setTimeout(() => {
             captureOriginalSettings();
             updateSaveButtonState();
+            updateSubmitButton(); // Обновляем состояние кнопки Скачать
         }, 500);
 
         // Слушаем изменения во всех полях настроек
@@ -632,15 +717,24 @@
         settingsInputs.forEach(inputId => {
             const element = document.getElementById(inputId);
             if (element) {
-                element.addEventListener('change', updateSaveButtonState);
-                element.addEventListener('input', updateSaveButtonState);
+                element.addEventListener('change', function() {
+                    updateSaveButtonState();
+                    updateSubmitButton(); // Обновляем кнопку Скачать при изменении настроек
+                });
+                element.addEventListener('input', function() {
+                    updateSaveButtonState();
+                    updateSubmitButton(); // Обновляем кнопку Скачать при изменении настроек
+                });
             }
         });
 
         // Особый случай для directory browser
         window.addEventListener('message', function(event) {
             if (event.data && event.data.type === 'directorySelected') {
-                setTimeout(updateSaveButtonState, 100);
+                setTimeout(function() {
+                    updateSaveButtonState();
+                    updateSubmitButton(); // Обновляем кнопку Скачать при выборе директории
+                }, 100);
             }
         });
     }
@@ -688,6 +782,8 @@
 
         // Остальной код инициализации...
         loadYtDlpVersion();
+        loadFfmpegVersion();
+
         updateDownloadsList();
 
         // Обработчики для кнопки вставки и других элементов...
