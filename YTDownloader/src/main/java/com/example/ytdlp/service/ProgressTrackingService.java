@@ -1,11 +1,13 @@
 package com.example.ytdlp.service;
 
+import com.example.ytdlp.config.ApplicationConfig;
 import com.example.ytdlp.utils.constants.RegexPatterns;
 import com.example.ytdlp.utils.model.DownloadProgress;
 import com.example.ytdlp.utils.model.DownloadRequest;
 import lombok.Getter;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Service;
 
 import java.io.File;
@@ -24,8 +26,9 @@ import java.util.regex.Pattern;
 public class ProgressTrackingService {
     private final Map<String, DownloadProgress> activeDownloads = new ConcurrentHashMap<>();
     private final Map<String, Process> activeProcesses = new ConcurrentHashMap<>();
-
     private final HistoryService historyService; // для добавления в историю
+
+    @Autowired private ApplicationConfig appConfig;
 
     public DownloadProgress initializeProgress(String downloadId, DownloadRequest request) {
         DownloadProgress progress = new DownloadProgress();
@@ -34,7 +37,7 @@ public class ProgressTrackingService {
         progress.setStatus("analyzing");
         progress.setProgress(0);
         progress.setStartTime(LocalDateTime.now());
-        progress.setDownloadDirectory(request.getDownloadDirectory());
+        progress.setDownloadDirectory(appConfig.getDirectory());
 
         activeDownloads.put(downloadId, progress);
         return progress;

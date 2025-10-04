@@ -23,8 +23,7 @@ public class YtDlpService {
     private final ProcessControlService processControlService;
     private final UtilityService utilityService;
 
-    @Autowired
-    private ApplicationConfig appConfig;
+    @Autowired private ApplicationConfig appConfig;
 
     @PostConstruct
     public void init() {

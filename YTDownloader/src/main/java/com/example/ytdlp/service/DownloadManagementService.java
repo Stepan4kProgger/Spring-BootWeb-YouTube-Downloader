@@ -44,22 +44,13 @@ class DownloadManagementService {
     public DownloadResponse downloadVideo(DownloadRequest request) {
         String downloadId = UUID.randomUUID().toString();
 
-        // Устанавливаем директорию из конфига, если не указана в запросе
-        if (request.getDownloadDirectory() == null || request.getDownloadDirectory().trim().isEmpty()) {
-            request.setDownloadDirectory(appConfig.getDirectory());
-        }
-
         DownloadProgress progress = progressTrackingService.initializeProgress(downloadId, request);
 
         try {
             VideoInfo videoInfo = videoInfoService.getVideoInfo(request);
 
-            // Используем качество из конфига, если не указано в запросе
-            String quality = (request.getFormat() == null || request.getFormat().trim().isEmpty())
-                    ? appConfig.getQuality()
-                    : request.getFormat();
-
-            FormatSelection formats = formatSelectionService.selectFormats(videoInfo, quality);
+            FormatSelection formats = formatSelectionService.selectFormats(videoInfo,
+                    appConfig.getQuality(), appConfig.isCompatibilityMode());
 
             Path finalFile = executeDownload(request, videoInfo, formats, progress);
             return completeDownload(progress, finalFile);
@@ -78,8 +69,6 @@ class DownloadManagementService {
         Path finalOutputFile;
 
         try {
-            String targetDirectory = request.getDownloadDirectory();
-
             // Проверяем существование yt-dlp и ffmpeg
             if (!Files.exists(Paths.get(ytDlpPath))) {
                 throw new IOException("yt-dlp not found at: " + ytDlpPath);
@@ -89,7 +78,7 @@ class DownloadManagementService {
             }
 
             // Создаем директорию для загрузок
-            Path downloadDir = Paths.get(targetDirectory);
+            Path downloadDir = Paths.get(appConfig.getDirectory());
             if (!Files.exists(downloadDir)) {
                 Files.createDirectories(downloadDir);
                 log.info("Created download directory: {}", downloadDir);
@@ -129,8 +118,12 @@ class DownloadManagementService {
                 log.info("Using SEPARATE formats download");
 
                 String tempPrefix = "temp_" + progress.getDownloadId() + "_";
-                videoTempFile = createTempFile(downloadDir, tempPrefix + "video", ".mp4");
-                audioTempFile = createTempFile(downloadDir, tempPrefix + "audio", ".m4a");
+
+                String videoExt = determineFileExtension(formats.getVideoFormat(), true);
+                String audioExt = determineFileExtension(formats.getAudioFormat(), false);
+
+                videoTempFile = createTempFile(downloadDir, tempPrefix + "video", videoExt);
+                audioTempFile = createTempFile(downloadDir, tempPrefix + "audio", audioExt);
 
                 // Скачиваем видео
                 progressTrackingService.updateProgress(progress.getDownloadId(), "downloading_video", 30);
@@ -319,6 +312,39 @@ class DownloadManagementService {
 
     }
 
+    private String determineFileExtension(VideoFormatInfo format, boolean isVideo) {
+        if (format == null) {
+            return isVideo ? ".mp4" : ".m4a";
+        }
+
+        // Используем расширение из информации о формате, если доступно
+        String ext = format.getExt();
+        if (ext != null && !ext.trim().isEmpty()) {
+            return "." + ext;
+        }
+
+        // Определяем по кодекам и контейнерам
+        if (isVideo) {
+            String vcodec = format.getVcodec();
+            if (vcodec != null && vcodec.contains("vp9")) {
+                return ".webm";
+            }
+            return ".mp4";
+        } else {
+            String acodec = format.getAcodec();
+            if (acodec != null) {
+                if (acodec.contains("opus")) {
+                    return ".webm"; // или ".opus", но FFmpeg лучше работает с .webm для Opus
+                } else if (acodec.contains("mp4a") || acodec.contains("aac")) {
+                    return ".m4a";
+                } else if (acodec.contains("vorbis")) {
+                    return ".webm";
+                }
+            }
+            return ".m4a";
+        }
+    }
+
     // Метод для возобновления загрузки
     public void resumeDownload(DownloadProgress progress) {
         DownloadRequest request = createRequestFromProgress(progress);
@@ -347,7 +373,6 @@ class DownloadManagementService {
     private DownloadRequest createRequestFromProgress(DownloadProgress progress) {
         DownloadRequest request = new DownloadRequest();
         request.setUrl(progress.getUrl());
-        request.setDownloadDirectory(progress.getDownloadDirectory());
         return request;
     }
 }

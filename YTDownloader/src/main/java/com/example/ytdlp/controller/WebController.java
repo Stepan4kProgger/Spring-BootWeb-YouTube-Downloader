@@ -174,7 +174,7 @@ public class WebController {
 
     @PostMapping("/download")
     public String downloadVideo(DownloadRequest request, RedirectAttributes redirectAttributes) {
-        if (request.getDownloadDirectory() == null || request.getDownloadDirectory().trim().isEmpty()) {
+        if (appConfig.getDirectory() == null || appConfig.getDirectory().trim().isEmpty()) {
             redirectAttributes.addFlashAttribute("errorMessage", "Ошибка: Необходимо выбрать папку для загрузки");
             return "redirect:/yt-dlp/";
         }
@@ -238,11 +238,12 @@ public class WebController {
     public ResponseEntity<String> saveAllSettings(
             @RequestParam String directory,
             @RequestParam boolean clearHistoryOnStartup,
-            @RequestParam String quality) {
+            @RequestParam String quality,
+            @RequestParam boolean compatibilityMode) {
 
         try {
             // Используем новый метод для массового обновления
-            appConfig.updateAllSettings(directory, clearHistoryOnStartup, quality);
+            appConfig.updateAllSettings(directory, clearHistoryOnStartup, quality, compatibilityMode);
             return ResponseEntity.ok("Все настройки сохранены");
         } catch (Exception e) {
             return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR)
@@ -258,6 +259,7 @@ public class WebController {
             settings.put("directory", appConfig.getDirectory());
             settings.put("clearHistoryOnStartup", String.valueOf(appConfig.isClearHistoryOnStartup()));
             settings.put("quality", appConfig.getQuality());
+            settings.put("compatibilityMode", String.valueOf(appConfig.isCompatibilityMode()));
 
             return ResponseEntity.ok(settings);
         } catch (Exception e) {

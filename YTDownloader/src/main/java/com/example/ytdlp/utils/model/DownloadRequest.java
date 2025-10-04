@@ -11,8 +11,5 @@ import lombok.NoArgsConstructor;
 public class DownloadRequest {
     @NotBlank(message = "URL is required")
     private String url;
-
-    private String downloadDirectory;
-    private String format;
     private String cookies;
 }

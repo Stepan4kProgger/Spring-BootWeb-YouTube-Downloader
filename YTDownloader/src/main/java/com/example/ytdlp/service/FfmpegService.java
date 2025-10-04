@@ -19,36 +19,44 @@ class FfmpegService {
     public void mergeWithFfmpeg(String videoFile, String audioFile, String outputFile)
             throws IOException, InterruptedException {
 
-        List<String> command = new ArrayList<>();
-        command.add(ffmpegPath);
-        command.add("-i");
-        command.add(videoFile);
-        command.add("-i");
-        command.add(audioFile);
-        command.add("-c:v");
-        command.add("copy"); // Копируем видео поток без изменений
-        command.add("-c:a");
-        command.add("copy"); // Копируем аудио поток без изменений
-        command.add("-y"); // Перезаписываем выходной файл
-        command.add(outputFile);
+        List<String> command = buildMergeCommand(videoFile, audioFile, outputFile, false);
 
         log.info("Merging with FFmpeg (copy streams): {} + {} -> {}", videoFile, audioFile, outputFile);
-        log.info("FFmpeg command: {}", String.join(" ", command));
 
-        ProcessBuilder processBuilder = new ProcessBuilder(command);
-        Process process = processBuilder.start();
+        if (!executeFfmpegCommand(command, "merge (copy)")) {
+            log.warn("Direct stream copy failed, trying with explicit mapping...");
+            List<String> explicitCommand = buildMergeCommand(videoFile, audioFile, outputFile, true);
+            executeFfmpegCommand(explicitCommand, "merge (explicit mapping)");
+        }
+    }
 
-        // Читаем вывод FFmpeg для диагностики
+    private List<String> buildMergeCommand(String videoFile, String audioFile, String outputFile, boolean explicitMapping) {
+        List<String> command = new ArrayList<>(List.of(ffmpegPath, "-i", videoFile, "-i", audioFile));
+
+        if (explicitMapping) {
+            command.addAll(List.of("-map", "0:v", "-map", "1:a"));
+        }
+
+        command.addAll(List.of("-c:v", "copy", "-c:a", "copy", "-y", outputFile));
+        return command;
+    }
+
+    private boolean executeFfmpegCommand(List<String> command, String operation)
+            throws IOException, InterruptedException {
+
+        log.info("FFmpeg {} command: {}", operation, String.join(" ", command));
+
+        Process process = new ProcessBuilder(command).start();
         Thread outputReader = getOutputReader(process);
 
         int exitCode = process.waitFor();
         outputReader.join();
 
-        if (exitCode != 0) {
-            throw new IOException("FFmpeg merge failed with exit code: " + exitCode);
+        if (exitCode == 0) {
+            log.info("FFmpeg {} completed successfully", operation);
+            return true;
         }
-
-        log.info("FFmpeg merge completed successfully - streams copied without re-encoding");
+        return false;
     }
 
     private static Thread getOutputReader(Process process) {
