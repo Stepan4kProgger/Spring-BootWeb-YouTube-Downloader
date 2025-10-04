@@ -557,8 +557,9 @@
         const hasUnsavedSettings = checkSettingsChanges(); // Проверяем несохраненные настройки
 
         // Кнопка активна только если:
-        // 1. URL и директория заполнены
-        // 2. НЕТ несохраненных настроек (все настройки сохранены)
+        // 1. URL заполнен
+        // 2. Директория в настройках не пустая (значит, она сохранена в конфиге)
+        // 3. НЕТ несохраненных настроек
         const shouldBeEnabled = url && directory && !hasUnsavedSettings;
 
         submitButton.disabled = !shouldBeEnabled;
@@ -598,6 +599,9 @@
                     document.getElementById('quality').value = settings.quality;
                 }
 
+                document.getElementById('compatibilityMode').checked =
+                    settings.compatibilityMode === 'true';
+
                 // После загрузки настроек инициализируем отслеживание изменений
                 initSettingsTracking();
 
@@ -627,6 +631,7 @@
             formData.append('directory', document.getElementById('downloadDirectory').value);
             formData.append('clearHistoryOnStartup', document.getElementById('clearHistoryOnStartup').checked);
             formData.append('quality', document.getElementById('quality').value);
+            formData.append('compatibilityMode', document.getElementById('compatibilityMode').checked);
 
             fetch('/yt-dlp/settings/save-all', {
                 method: 'POST',
@@ -666,7 +671,8 @@
         originalSettings = {
             directory: document.getElementById('downloadDirectory').value,
             clearHistoryOnStartup: document.getElementById('clearHistoryOnStartup').checked,
-            quality: document.getElementById('quality').value
+            quality: document.getElementById('quality').value,
+            compatibilityMode: document.getElementById('compatibilityMode').checked
         };
     }
 
@@ -675,7 +681,8 @@
         const currentSettings = {
             directory: document.getElementById('downloadDirectory').value,
             clearHistoryOnStartup: document.getElementById('clearHistoryOnStartup').checked,
-            quality: document.getElementById('quality').value
+            quality: document.getElementById('quality').value,
+            compatibilityMode: document.getElementById('compatibilityMode').checked
         };
 
         return JSON.stringify(originalSettings) !== JSON.stringify(currentSettings);
@@ -711,7 +718,8 @@
         const settingsInputs = [
             'downloadDirectory',
             'clearHistoryOnStartup',
-            'quality'
+            'quality',
+            'compatibilityMode'
         ];
 
         settingsInputs.forEach(inputId => {
@@ -721,10 +729,12 @@
                     updateSaveButtonState();
                     updateSubmitButton(); // Обновляем кнопку Скачать при изменении настроек
                 });
-                element.addEventListener('input', function() {
-                    updateSaveButtonState();
-                    updateSubmitButton(); // Обновляем кнопку Скачать при изменении настроек
-                });
+                if (element.type !== 'checkbox') {
+                    element.addEventListener('input', function() {
+                        updateSaveButtonState();
+                        updateSubmitButton();
+                    });
+                }
             }
         });
 

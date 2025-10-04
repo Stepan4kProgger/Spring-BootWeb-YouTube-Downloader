@@ -113,7 +113,7 @@
                       <!-- Format Options -->
                       <div class="mb-2">
                         <label for="quality" class="form-label fw-bold">Качество видео</label>
-                        <select class="form-select form-select-sm" id="quality" name="format">
+                        <select class="form-select form-select-sm" id="quality">
                           <option value="worst">Худшее доступное</option>
                           <option value="144">144p</option>
                           <option value="240">240p</option>
@@ -123,8 +123,20 @@
                           <option value="1080">1080p</option>
                           <option value="1440">1440p (2K)</option>
                           <option value="2160">2160p (4K)</option>
+                          <option value="4320">4320 (8K)</option>
                           <option value="best">Лучшее доступное</option>
                         </select>
+                      </div>
+
+                      <div class="mb-2">
+                        <div class="form-check form-switch">
+                          <input class="form-check-input" type="checkbox"
+                                 id="compatibilityMode" name="compatibilityMode" checked>
+                          <label class="form-check-label fw-bold" for="compatibilityMode">
+                            Совместимость со старыми устройствами воспроизведения
+                          </label>
+                        </div>
+                        <div class="form-text">Гарантирует совместимость с старыми медиаплеерами и ТВ-приставками (H.264, AAC, MP4)</div>
                       </div>
 
                       <!-- Save settings button -->
