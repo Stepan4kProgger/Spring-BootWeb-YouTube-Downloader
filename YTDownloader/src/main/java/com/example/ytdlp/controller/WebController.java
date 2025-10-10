@@ -1,6 +1,7 @@
 package com.example.ytdlp.controller;
 
 import com.example.ytdlp.config.ApplicationConfig;
+import com.example.ytdlp.service.ProcessControlService;
 import com.example.ytdlp.service.ProgressTrackingService;
 import com.example.ytdlp.utils.model.DownloadProgress;
 import com.example.ytdlp.utils.model.DownloadRequest;
@@ -27,6 +28,7 @@ import java.util.*;
 @RequiredArgsConstructor
 public class WebController {
     private final ProgressTrackingService progressTrackingService;
+    private final ProcessControlService processControlService;
     private final YtDlpService ytDlpService;
     private final ApplicationConfig appConfig;
 
@@ -193,6 +195,22 @@ public class WebController {
         }
 
         return "redirect:/";
+    }
+
+    @PostMapping("/downloads/retry")
+    @ResponseBody
+    public ResponseEntity<String> retryDownload(@RequestParam String downloadId) {
+        try {
+            boolean success = processControlService.retryDownload(downloadId);
+            if (success) {
+                return ResponseEntity.ok("Загрузка перезапущена");
+            } else {
+                return ResponseEntity.status(HttpStatus.BAD_REQUEST).body("Не удалось перезапустить загрузку");
+            }
+        } catch (Exception e) {
+            return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR)
+                    .body("Ошибка перезапуска: " + e.getMessage());
+        }
     }
 
     @PostMapping("/downloads/open-explorer")

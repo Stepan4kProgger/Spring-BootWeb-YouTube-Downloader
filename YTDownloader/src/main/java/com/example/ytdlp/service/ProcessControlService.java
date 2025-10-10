@@ -20,7 +20,7 @@ import java.util.concurrent.TimeUnit;
 @Slf4j
 @Service
 @RequiredArgsConstructor
-class ProcessControlService {
+public class ProcessControlService {
     private final ProgressTrackingService progressTrackingService;
     private final HistoryService historyService;
     private final DownloadManagementService downloadManagementService; // для resume
@@ -64,6 +64,40 @@ class ProcessControlService {
             }
         } catch (Exception e) {
             log.error("Error resuming download: {}", e.getMessage());
+        }
+        return false;
+    }
+
+    public boolean retryDownload(String downloadId) {
+        try {
+            // Ищем загрузку в истории
+            DownloadProgress progress = historyService.getDownloadHistory().stream()
+                    .filter(p -> downloadId.equals(p.getDownloadId()))
+                    .findFirst()
+                    .orElse(null);
+
+            if (progress != null && "error".equals(progress.getStatus())) {
+                String url = progress.getUrl();
+
+                // Удаляем старую запись из истории
+                historyService.getDownloadHistory().removeIf(p -> downloadId.equals(p.getDownloadId()));
+                historyService.saveDownloadHistory();
+
+                // Удаляем частичный файл, если он существует
+                deletePartialFile(progress);
+
+                // Запускаем новую загрузку с той же ссылкой
+                DownloadRequest request = new DownloadRequest();
+                request.setUrl(url);
+                // cookies не передаем, т.к. они не сохраняются в истории
+
+                downloadManagementService.downloadVideo(request);
+
+                log.info("Retried download for URL: {}", url);
+                return true;
+            }
+        } catch (Exception e) {
+            log.error("Error retrying download {}: {}", downloadId, e.getMessage(), e);
         }
         return false;
     }
@@ -168,6 +202,18 @@ class ProcessControlService {
                             Files.deleteIfExists(tempFile);
                             log.info("Deleted partial file: {}", tempFile);
                         }
+                    }
+                }
+
+                // Дополнительно: удаляем временные файлы по шаблону downloadId
+                String tempPrefix = "temp_" + progress.getDownloadId() + "_";
+                try (DirectoryStream<Path> stream = Files.newDirectoryStream(
+                        Paths.get(progress.getDownloadDirectory()),
+                        tempPrefix + "*")) {
+
+                    for (Path tempFile : stream) {
+                        Files.deleteIfExists(tempFile);
+                        log.info("Deleted temp file: {}", tempFile);
                     }
                 }
             }
