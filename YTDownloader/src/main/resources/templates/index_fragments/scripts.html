@@ -287,7 +287,12 @@
                                     </button>
                                 ` : ''}
 
-                                ${status === 'error' || status === 'cancelled' ? `
+                                ${status === 'error' ? `
+                                    <button class="btn btn-sm btn-outline-primary me-1"
+                                            onclick="retryDownload('${downloadId}')"
+                                            title="Повторить загрузку">
+                                        <i class="fas fa-redo me-1"></i>Повторить
+                                    </button>
                                     <button class="btn btn-sm btn-outline-danger"
                                             onclick="deleteDownload('${downloadId}')"
                                             title="Удалить из истории">
@@ -528,6 +533,30 @@
                 }
             }, 300);
         }
+    }
+
+    // Альтернативная функция для повторной загрузки через data-атрибуты
+    function retryDownload(downloadId) {
+        fetch('/yt-dlp/downloads/retry', {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/x-www-form-urlencoded',
+            },
+            body: new URLSearchParams({ downloadId })
+        })
+        .then(response => {
+            if (response.ok) {
+                return response.text();
+            } else {
+                return response.text().then(text => { throw new Error(text); });
+            }
+        })
+        .then(message => {
+            showNotification(message, 'success');
+            // Обновляем список через секунду, чтобы показать новую загрузку
+            setTimeout(updateDownloadsList, 1000);
+        })
+        .catch(error => showNotification('Ошибка: ' + error.message, 'error'));
     }
 
     // Form validation
