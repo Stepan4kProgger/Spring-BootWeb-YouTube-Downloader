@@ -42,7 +42,28 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
         });
         return true;
     }
+
+    if (request.action === 'GET_SETTINGS') {
+        getSettings()
+            .then(settings => sendResponse({ success: true, settings }))
+            .catch(error => sendResponse({ success: false, error: error.message }));
+        return true;
+    }
 });
+
+// Функция для получения настроек
+async function getSettings() {
+    return new Promise(resolve => {
+        chrome.storage.sync.get(['serverUrl', 'sendCookies'], (result) => {
+            // По умолчанию передача cookie включена
+            const settings = {
+                serverUrl: result.serverUrl || 'http://localhost:8080',
+                sendCookies: result.sendCookies !== false // true по умолчанию
+            };
+            resolve(settings);
+        });
+    });
+}
 
 // Улучшенная функция для получения куки с YouTube
 async function getYouTubeCookies(tabId) {
@@ -120,34 +141,32 @@ async function getYouTubeCookies(tabId) {
     });
 }
 
-// Функция для получения настроек
-async function getSettings() {
-    return new Promise(resolve => {
-        chrome.storage.sync.get(['serverUrl'], resolve);
-    });
-}
-
 async function handleDownload(videoUrl, tabId) {
     let settings;
     
     try {
         settings = await getSettings();
-        const serverUrl = settings.serverUrl || 'http://localhost:8080';
+        const serverUrl = settings.serverUrl;
+        const sendCookies = settings.sendCookies;
         
-        console.log('Attempting download with server URL:', serverUrl);
+        console.log('Attempting download with settings:', { serverUrl, sendCookies });
         
-        // Получаем куки YouTube
+        // Получаем куки YouTube только если включено в настройках
         let youTubeCookies = null;
-        try {
-            youTubeCookies = await getYouTubeCookies(tabId);
-            
-            if (!youTubeCookies.cookieString || youTubeCookies.rawCookies.length === 0) {
-                console.warn('No YouTube cookies found. Download may fail for age-restricted or private content.');
-            } else {
-                console.log(`Successfully retrieved ${youTubeCookies.rawCookies.length} cookies`);
+        if (sendCookies) {
+            try {
+                youTubeCookies = await getYouTubeCookies(tabId);
+                
+                if (!youTubeCookies.cookieString || youTubeCookies.rawCookies.length === 0) {
+                    console.warn('No YouTube cookies found. Download may fail for age-restricted or private content.');
+                } else {
+                    console.log(`Successfully retrieved ${youTubeCookies.rawCookies.length} cookies`);
+                }
+            } catch (cookieError) {
+                console.warn('Could not get YouTube cookies:', cookieError.message);
             }
-        } catch (cookieError) {
-            console.warn('Could not get YouTube cookies:', cookieError.message);
+        } else {
+            console.log('Cookie transfer disabled in settings. Only public videos can be downloaded.');
         }
 
         // Создаем объект запроса
@@ -158,9 +177,11 @@ async function handleDownload(videoUrl, tabId) {
             cookies: youTubeCookies ? youTubeCookies.cookieString : null
         };
 
-        console.log('Sending download request to:', `${serverUrl}/api/download`);
-        console.log('Video URL:', videoUrl);
-        console.log('Cookies provided:', !!downloadRequest.cookies);
+        console.log('Sending download request:', {
+            server: `${serverUrl}/api/download`,
+            videoUrl: videoUrl,
+            cookiesProvided: !!downloadRequest.cookies
+        });
 
         // УВЕЛИЧИВАЕМ ТАЙМАУТ ДО 10 МИНУТ для долгих операций
         const controller = new AbortController();

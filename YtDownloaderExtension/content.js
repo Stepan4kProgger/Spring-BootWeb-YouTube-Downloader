@@ -1,6 +1,7 @@
 class YouTubeToYtDlpExtension {
     constructor() {
         this.serverUrl = 'http://localhost:8080';
+        this.sendCookies = true; // По умолчанию включено
         this.processedThumbnails = new WeakSet();
         this.observer = null;
         this.notificationQueue = [];
@@ -18,14 +19,28 @@ class YouTubeToYtDlpExtension {
         } else {
             this.injectButtons();
         }
+
+        this.addMessageListener();
     }
 
     async loadSettings() {
         return new Promise((resolve) => {
-            chrome.storage.sync.get(['serverUrl'], (result) => {
+            chrome.storage.sync.get(['serverUrl', 'sendCookies'], (result) => {
                 this.serverUrl = result.serverUrl || this.serverUrl;
+                this.sendCookies = result.sendCookies !== false; // true по умолчанию
                 resolve();
             });
+        });
+    }
+
+    addMessageListener() {
+        chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
+            if (request.action === 'RELOAD_SETTINGS') {
+                this.loadSettings().then(() => {
+                    sendResponse({ success: true });
+                });
+                return true;
+            }
         });
     }
 
@@ -262,7 +277,7 @@ class YouTubeToYtDlpExtension {
     createDownloadButton() {
         const button = document.createElement('button');
         button.innerHTML = '⬇️';
-        button.title = 'Скачать через YT-DLP (с передачей куки авторизации)';
+        button.title = 'Скачать через YT-DLP';
         button.className = 'yt-dlp-download-btn';
         return button;
     }
@@ -277,6 +292,7 @@ class YouTubeToYtDlpExtension {
             }
 
             console.log('Извлеченный URL:', videoUrl);
+            console.log('Настройки cookie:', this.sendCookies);
             
             // Получаем ID текущей вкладки
             const tabId = await this.getCurrentTabId();
@@ -285,8 +301,15 @@ class YouTubeToYtDlpExtension {
             const requestId = Date.now().toString();
             this.pendingDownloads.set(requestId, { videoUrl, startTime: Date.now() });
             
-            // Показываем уведомление о начале загрузки - оно автоматически исчезнет через 5 секунд
-            this.showProgressNotification('Отправка видео на скачивание... Сервер обрабатывает запрос...');
+            // Обновляем сообщение в зависимости от настроек cookie
+            let progressMessage = 'Отправка видео на скачивание...';
+            if (!this.sendCookies) {
+                progressMessage += ' (без передачи cookie)';
+            } else {
+                progressMessage += ' (с передачей cookie)';
+            }
+            
+            this.showProgressNotification(progressMessage);
             
             chrome.runtime.sendMessage({
                 action: 'DOWNLOAD_VIDEO',
@@ -306,10 +329,23 @@ class YouTubeToYtDlpExtension {
                     const errorMsg = response?.error || 'Неизвестная ошибка';
                     console.error('Download error:', errorMsg);
                     
-                    // Улучшенные сообщения об ошибках сети
-                    if (errorMsg.includes('Сервер не ответил в течение 10 минут') || 
-                        errorMsg.includes('Таймаут соединения') ||
-                        errorMsg.includes('AbortError')) {
+                    // Если cookie отключены и ошибка связана с доступом
+                    if (!this.sendCookies && (
+                        errorMsg.includes('authorized') || 
+                        errorMsg.includes('auth') || 
+                        errorMsg.includes('login') ||
+                        errorMsg.includes('private') ||
+                        errorMsg.includes('age-restricted')
+                    )) {
+                        this.showNotification(
+                            '❌ Для скачивания этого видео необходима передача cookie.\n\n' +
+                            'Включите "Передавать cookie-файлы" в настройках расширения\n' +
+                            'и убедитесь, что вы авторизованы на YouTube.',
+                            true
+                        );
+                    } else if (errorMsg.includes('Сервер не ответил в течение 10 минут') || 
+                            errorMsg.includes('Таймаут соединения') ||
+                            errorMsg.includes('AbortError')) {
                         
                         this.showNotification(
                             '✅ Запрос на скачивание принят сервером!\n\n' +
@@ -328,15 +364,10 @@ class YouTubeToYtDlpExtension {
                             '3. Проверьте блокировку брандмауэром', 
                             true
                         );
-                    } else if (errorMsg.includes('authorized') || errorMsg.includes('auth') || errorMsg.includes('login')) {
-                        this.showNotification('Ошибка авторизации. Убедитесь, что вы вошли в аккаунт YouTube и перезагрузите страницу.', true);
                     } else {
                         this.showNotification('Ошибка загрузки: ' + errorMsg, true);
                     }
                 }
-                
-                // УДАЛЕН БЛОК, который удалял прогресс-уведомление через 2 секунды
-                // Теперь прогресс-уведомление автоматически исчезнет через 5 секунд
             });
             
         } catch (error) {

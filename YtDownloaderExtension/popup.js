@@ -1,17 +1,21 @@
 document.addEventListener('DOMContentLoaded', function() {
     const serverUrlInput = document.getElementById('serverUrl');
+    const sendCookiesCheckbox = document.getElementById('sendCookies');
     const saveBtn = document.getElementById('saveBtn');
     const testBtn = document.getElementById('testBtn');
     const statusDiv = document.getElementById('status');
 
     // Загружаем сохраненные настройки
-    chrome.storage.sync.get(['serverUrl'], function(result) {
+    chrome.storage.sync.get(['serverUrl', 'sendCookies'], function(result) {
         serverUrlInput.value = result.serverUrl || 'http://localhost:8080';
+        // По умолчанию передача cookie включена
+        sendCookiesCheckbox.checked = result.sendCookies !== false;
     });
 
     // Сохранение настроек
     saveBtn.addEventListener('click', function() {
         const serverUrl = serverUrlInput.value.trim();
+        const sendCookies = sendCookiesCheckbox.checked;
         
         if (!serverUrl) {
             showStatus('Введите URL сервера', 'error');
@@ -24,8 +28,18 @@ document.addEventListener('DOMContentLoaded', function() {
             return;
         }
 
-        chrome.storage.sync.set({ serverUrl }, function() {
-            showStatus('Настройки сохранены!', 'success');
+        chrome.storage.sync.set({ 
+            serverUrl: serverUrl,
+            sendCookies: sendCookies
+        }, function() {
+            let message = 'Настройки сохранены!';
+            if (!sendCookies) {
+                message += '\n\n⚠️ Передача cookie отключена. Вы не сможете скачивать приватные и возрастные видео.';
+            }
+            showStatus(message, sendCookies ? 'success' : 'warning');
+            
+            // Обновляем настройки во вкладках YouTube
+            updateYouTubeTabs();
         });
     });
 
@@ -55,6 +69,24 @@ document.addEventListener('DOMContentLoaded', function() {
         });
     });
 
+    // Функция для обновления вкладок YouTube
+    function updateYouTubeTabs() {
+        chrome.tabs.query({url: '*://*.youtube.com/*'}, function(tabs) {
+            if (tabs.length > 0) {
+                // Сообщаем контент-скриптам об обновлении настроек
+                tabs.forEach(tab => {
+                    chrome.tabs.sendMessage(tab.id, { 
+                        action: 'RELOAD_SETTINGS' 
+                    }, function(response) {
+                        if (chrome.runtime.lastError) {
+                            // Контент-скрипт может быть не загружен
+                        }
+                    });
+                });
+            }
+        });
+    }
+
     function showStatus(message, type) {
         statusDiv.textContent = message;
         statusDiv.className = `status ${type}`;
@@ -62,7 +94,7 @@ document.addEventListener('DOMContentLoaded', function() {
         statusDiv.style.whiteSpace = 'pre-line';
         
         // Не скрываем сообщения об ошибках автоматически
-        if (type !== 'error') {
+        if (type !== 'error' && type !== 'warning') {
             setTimeout(() => {
                 statusDiv.style.display = 'none';
             }, 5000);

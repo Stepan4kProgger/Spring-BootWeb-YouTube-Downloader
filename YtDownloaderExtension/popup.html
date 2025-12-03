@@ -23,6 +23,27 @@
             border-radius: 4px;
             box-sizing: border-box;
         }
+        .checkbox-container {
+            display: flex;
+            align-items: center;
+            margin: 10px 0;
+            cursor: pointer;
+        }
+        .checkbox-container input[type="checkbox"] {
+            margin-right: 8px;
+            width: auto;
+        }
+        .checkbox-label {
+            font-weight: normal;
+            cursor: pointer;
+            user-select: none;
+        }
+        .checkbox-note {
+            font-size: 12px;
+            color: #666;
+            margin-left: 24px;
+            margin-top: 4px;
+        }
         button {
             width: 100%;
             padding: 10px;
@@ -32,6 +53,7 @@
             border-radius: 4px;
             cursor: pointer;
             font-size: 14px;
+            margin-top: 5px;
         }
         button:hover {
             background: #45a049;
@@ -57,6 +79,11 @@
             color: #0c5460;
             border: 1px solid #bee5eb;
         }
+        .warning {
+            background: #fff3cd;
+            color: #856404;
+            border: 1px solid #ffeeba;
+        }
     </style>
 </head>
 <body>
@@ -64,6 +91,19 @@
         <h3>Настройки YT-DLP</h3>
         <label for="serverUrl">URL сервера:</label>
         <input type="text" id="serverUrl" placeholder="http://localhost:8080">
+    </div>
+    
+    <div class="section">
+        <div class="checkbox-container">
+            <input type="checkbox" id="sendCookies">
+            <label for="sendCookies" class="checkbox-label">
+                Передавать cookie-файлы
+            </label>
+        </div>
+        <div class="checkbox-note">
+            Позволяет скачивать приватные и возрастные видео. 
+            Если отключено - скачивание только публичных видео.
+        </div>
     </div>
     
     <div class="section">
