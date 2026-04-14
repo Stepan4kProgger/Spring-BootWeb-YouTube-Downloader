@@ -1,7 +1,7 @@
 class YouTubeToYtDlpExtension {
     constructor() {
         this.serverUrl = 'http://localhost:8080';
-        this.sendCookies = true; // По умолчанию включено
+        this.sendCookies = true;
         this.processedThumbnails = new WeakSet();
         this.observer = null;
         this.notificationQueue = [];
@@ -27,7 +27,7 @@ class YouTubeToYtDlpExtension {
         return new Promise((resolve) => {
             chrome.storage.sync.get(['serverUrl', 'sendCookies'], (result) => {
                 this.serverUrl = result.serverUrl || this.serverUrl;
-                this.sendCookies = result.sendCookies !== false; // true по умолчанию
+                this.sendCookies = result.sendCookies !== false;
                 resolve();
             });
         });
@@ -104,30 +104,16 @@ class YouTubeToYtDlpExtension {
                 overflow: hidden !important;
             }
             
-            /* Прогресс-уведомление теперь выглядит как информационное */
             .yt-dlp-progress-notification {
                 background: #2196F3 !important;
                 border-color: #1976D2 !important;
             }
             
-            /* Стили для различных типов миниатюр */
-            a.yt-lockup-view-model__content-image {
-                position: relative !important;
-            }
-            
-            div#thumbnail.style-scope.ytd-rich-grid-media {
-                position: relative !important;
-            }
-            
-            ytd-grid-video-renderer ytd-thumbnail {
-                position: relative !important;
-            }
-            
-            ytd-playlist-video-renderer ytd-thumbnail {
-                position: relative !important;
-            }
-            
-            ytd-video-renderer ytd-thumbnail {
+            /* Относительное позиционирование для контейнеров миниатюр */
+            a.yt-lockup-view-model__content-image,
+            div#thumbnail.style-scope.ytd-rich-grid-media,
+            a.ytLockupViewModelContentImage,
+            ytd-thumbnail {
                 position: relative !important;
             }
         `;
@@ -139,23 +125,30 @@ class YouTubeToYtDlpExtension {
             this.observer.disconnect();
         }
 
-        // Расширенный наблюдатель для всех типов миниатюр
+        // Расширенный наблюдатель для старых и новых типов миниатюр
         this.observer = new MutationObserver((mutations) => {
             let shouldProcess = false;
             
             for (const mutation of mutations) {
                 for (const node of mutation.addedNodes) {
                     if (node.nodeType === Node.ELEMENT_NODE) {
-                        // Проверяем, добавлены ли наши целевые элементы
+                        // Проверяем добавление релевантных элементов
                         if (node.matches && (
+                            // Старые селекторы
+                            node.matches('a.yt-lockup-view-model__content-image[href*="/watch?v="]') ||
+                            node.matches('div#thumbnail.style-scope.ytd-rich-grid-media') ||
+                            // Новые селекторы
                             node.matches('a.ytLockupViewModelContentImage[href*="/watch?v="]') ||
                             node.matches('ytd-rich-item-renderer') ||
+                            // Прочие
                             node.matches('ytd-grid-video-renderer') ||
                             node.matches('ytd-playlist-video-renderer') ||
                             node.matches('ytd-video-renderer') ||
+                            // Поиск в дочерних элементах
                             node.querySelector && (
                                 node.querySelector('a.yt-lockup-view-model__content-image[href*="/watch?v="]') ||
                                 node.querySelector('div#thumbnail.style-scope.ytd-rich-grid-media') ||
+                                node.querySelector('a.ytLockupViewModelContentImage[href*="/watch?v="]') ||
                                 node.querySelector('ytd-grid-video-renderer a#thumbnail.yt-simple-endpoint[href*="/watch?v="]') ||
                                 node.querySelector('ytd-playlist-video-renderer a#thumbnail.yt-simple-endpoint[href*="/watch?v="]') ||
                                 node.querySelector('ytd-video-renderer a#thumbnail.yt-simple-endpoint[href*="/watch?v="]')
@@ -183,10 +176,12 @@ class YouTubeToYtDlpExtension {
     }
 
     processThumbnails() {
-        // Расширяем селекторы для всех типов миниатюр
+        // Комбинированный селектор для всех типов миниатюр
         const videoContainers = document.querySelectorAll(`
+            a.yt-lockup-view-model__content-image[href*="/watch?v="],
+            div#thumbnail.style-scope.ytd-rich-grid-media,
             a.ytLockupViewModelContentImage[href*="/watch?v="],
-            ytd-rich-item-renderer:not([hidden]) a.ytLockupViewModelContentImage[href*="/watch?v="],
+            ytd-rich-item-renderer a.ytLockupViewModelContentImage[href*="/watch?v="],
             ytd-grid-video-renderer a#thumbnail.yt-simple-endpoint[href*="/watch?v="],
             ytd-playlist-video-renderer a#thumbnail.yt-simple-endpoint[href*="/watch?v="],
             ytd-video-renderer a#thumbnail.yt-simple-endpoint[href*="/watch?v="]
@@ -210,48 +205,53 @@ class YouTubeToYtDlpExtension {
 
         const button = this.createDownloadButton();
         
-        // Для первого типа (новый интерфейс) - добавляем прямо в контейнер
-        if (container.matches('a.ytLockupViewModelContentImage')) {
+        // Обработка разных типов контейнеров
+        if (container.matches('a.yt-lockup-view-model__content-image')) {
+            // Старый класс (может ещё встречаться)
             container.style.position = 'relative';
             container.appendChild(button);
         } 
-        // Для второго типа (контейнер rich-grid-media) - добавляем в этот контейнер
         else if (container.matches('div#thumbnail.style-scope.ytd-rich-grid-media')) {
+            // Старый контейнер rich-grid-media
             container.style.position = 'relative';
             container.appendChild(button);
         }
-        // Для третьего типа (страница канала) - добавляем в родительский ytd-thumbnail
+        else if (container.matches('a.ytLockupViewModelContentImage')) {
+            // Новый класс
+            container.style.position = 'relative';
+            container.appendChild(button);
+        }
+        else if (container.matches('ytd-rich-item-renderer a.ytLockupViewModelContentImage')) {
+            // Ссылка внутри нового рендерера
+            container.style.position = 'relative';
+            container.appendChild(button);
+        }
         else if (container.matches('ytd-grid-video-renderer a#thumbnail.yt-simple-endpoint')) {
             const thumbnailParent = container.closest('ytd-thumbnail');
             if (thumbnailParent) {
                 thumbnailParent.style.position = 'relative';
                 thumbnailParent.appendChild(button);
             } else {
-                // Fallback
                 container.style.position = 'relative';
                 container.appendChild(button);
             }
         }
-        // Для четвертого типа (плейлисты, включая "Понравившиеся") - добавляем в родительский ytd-thumbnail
         else if (container.matches('ytd-playlist-video-renderer a#thumbnail.yt-simple-endpoint')) {
             const thumbnailParent = container.closest('ytd-thumbnail');
             if (thumbnailParent) {
                 thumbnailParent.style.position = 'relative';
                 thumbnailParent.appendChild(button);
             } else {
-                // Fallback
                 container.style.position = 'relative';
                 container.appendChild(button);
             }
         }
-        // Для пятого типа (раздел "История") - добавляем в родительский ytd-thumbnail
         else if (container.matches('ytd-video-renderer a#thumbnail.yt-simple-endpoint')) {
             const thumbnailParent = container.closest('ytd-thumbnail');
             if (thumbnailParent) {
                 thumbnailParent.style.position = 'relative';
                 thumbnailParent.appendChild(button);
             } else {
-                // Fallback
                 container.style.position = 'relative';
                 container.appendChild(button);
             }
@@ -261,15 +261,20 @@ class YouTubeToYtDlpExtension {
             e.stopPropagation();
             e.preventDefault();
             
-            // Для разных типов контейнеров находим соответствующий элемент с видео
+            // Определяем элемент, содержащий URL видео
             let videoElement = container;
-            if (container.matches('a.ytLockupViewModelContentImage')) {
-                // Ссылка уже является самим контейнером
-                videoElement = container;
-            } else if (container.closest('ytd-rich-item-renderer')) {
-                // Для вложенных случаев
-                const videoLink = container.closest('ytd-rich-item-renderer').querySelector('a.ytLockupViewModelContentImage[href*="/watch?v="]');
-                if (videoLink) videoElement = videoLink;
+            
+            // Для старых контейнеров rich-grid-media ищем ссылку внутри
+            if (container.matches('div#thumbnail.style-scope.ytd-rich-grid-media')) {
+                const videoLink = container.querySelector('a[href*="/watch?v="]');
+                if (videoLink) {
+                    videoElement = videoLink;
+                }
+            }
+            // Для нового ytd-rich-item-renderer (если контейнер - это сам рендерер или вложенная ссылка)
+            else if (container.closest('ytd-rich-item-renderer')) {
+                const link = container.closest('ytd-rich-item-renderer').querySelector('a.ytLockupViewModelContentImage[href*="/watch?v="]');
+                if (link) videoElement = link;
             }
             
             this.handleDownloadClick(videoElement);
@@ -296,14 +301,10 @@ class YouTubeToYtDlpExtension {
             console.log('Извлеченный URL:', videoUrl);
             console.log('Настройки cookie:', this.sendCookies);
             
-            // Получаем ID текущей вкладки
             const tabId = await this.getCurrentTabId();
-            
-            // Создаем уникальный ID для этого запроса
             const requestId = Date.now().toString();
             this.pendingDownloads.set(requestId, { videoUrl, startTime: Date.now() });
             
-            // Обновляем сообщение в зависимости от настроек cookie
             let progressMessage = 'Отправка видео на скачивание...';
             if (!this.sendCookies) {
                 progressMessage += ' (без передачи cookie)';
@@ -318,20 +319,18 @@ class YouTubeToYtDlpExtension {
                 videoUrl: videoUrl,
                 tabId: tabId
             }, (response) => {
-                // Удаляем из ожидающих независимо от результата
                 this.pendingDownloads.delete(requestId);
                 
                 if (chrome.runtime.lastError) {
                     console.error('Runtime error:', chrome.runtime.lastError);
                     this.showNotification('Ошибка расширения: ' + chrome.runtime.lastError.message, true);
                 } else if (response?.success) {
-                    const duration = Math.round((Date.now() - this.pendingDownloads.get(requestId)?.startTime) / 1000);
+                    const duration = Math.round((Date.now() - (this.pendingDownloads.get(requestId)?.startTime || Date.now())) / 1000);
                     this.showNotification(`✅ Видео успешно отправлено на скачивание! (${duration}с)`, false);
                 } else {
                     const errorMsg = response?.error || 'Неизвестная ошибка';
                     console.error('Download error:', errorMsg);
                     
-                    // Если cookie отключены и ошибка связана с доступом
                     if (!this.sendCookies && (
                         errorMsg.includes('authorized') || 
                         errorMsg.includes('auth') || 
@@ -391,7 +390,6 @@ class YouTubeToYtDlpExtension {
         notification.textContent = message;
         notification.className = 'yt-dlp-notification yt-dlp-progress-notification';
         
-        // Добавляем индикатор загрузки
         const spinner = document.createElement('div');
         spinner.style.cssText = `
             display: inline-block;
@@ -407,7 +405,6 @@ class YouTubeToYtDlpExtension {
         
         notification.insertBefore(spinner, notification.firstChild);
         
-        // Добавляем CSS анимацию
         if (!document.getElementById('yt-dlp-spin-animation')) {
             const spinStyle = document.createElement('style');
             spinStyle.id = 'yt-dlp-spin-animation';
@@ -420,29 +417,24 @@ class YouTubeToYtDlpExtension {
             document.head.appendChild(spinStyle);
         }
 
-        // Добавляем в начало контейнера (сверху)
         queueContainer.insertBefore(notification, queueContainer.firstChild);
 
-        // Анимация появления - выезжает сверху
         notification.animate([
             { opacity: 0, transform: 'translateY(-100%) translateX(0)' },
             { opacity: 1, transform: 'translateY(0) translateX(0)' }
         ], { duration: 300, easing: 'ease-out' });
 
-        // Автоматически скрываем через 2.5 секунды с такой же анимацией, как у обычных уведомлений
         setTimeout(() => {
-            // Такая же анимация исчезновения, как в createNotificationElement
             notification.animate([
                 { opacity: 1, transform: 'translateX(0) translateY(0)' },
                 { opacity: 0, transform: 'translateX(100px) translateY(-20px)' }
             ], { duration: 300, easing: 'ease-in' }).onfinish = () => {
                 notification.remove();
-                
                 if (queueContainer.children.length === 0) {
                     queueContainer.remove();
                 }
             };
-        }, 2500); // 2.5 секунды - такой же интервал, как у обычных уведомлений
+        }, 2500);
 
         return notification;
     }
@@ -467,40 +459,29 @@ class YouTubeToYtDlpExtension {
     }
 
     extractVideoUrl(element) {
-        // Если это контейнер rich-grid-media, ищем ссылку внутри
+        // Старый класс
+        if (element.matches('a.yt-lockup-view-model__content-image')) {
+            return this.normalizeYouTubeUrl(element.href);
+        }
+        // Старый контейнер rich-grid-media
+        if (element.matches('div#thumbnail.style-scope.ytd-rich-grid-media')) {
+            const link = element.querySelector('a[href*="/watch?v="]');
+            if (link) return this.normalizeYouTubeUrl(link.href);
+        }
+        // Новый класс
         if (element.matches('a.ytLockupViewModelContentImage')) {
             return this.normalizeYouTubeUrl(element.href);
         }
-        // Для ytd-rich-item-renderer ищем вложенную ссылку
+        // Новый рендерер
         if (element.closest('ytd-rich-item-renderer')) {
             const link = element.closest('ytd-rich-item-renderer').querySelector('a.ytLockupViewModelContentImage[href*="/watch?v="]');
             if (link) return this.normalizeYouTubeUrl(link.href);
         }
-        // Для остальных случаев работаем как раньше
-        else if (element.href) {
+        // Прочие (старые страницы каналов, плейлистов и т.д.)
+        if (element.href) {
             return this.normalizeYouTubeUrl(element.href);
         }
-        
         return null;
-    }
-
-    extractVideoIdFromAttributes(element) {
-        // Ищем data-video-id в самой миниатюре или родительских элементах
-        const videoElement = element.querySelector('[data-video-id]') || 
-                           element.closest('[data-video-id]');
-        
-        if (videoElement) {
-            const videoId = videoElement.getAttribute('data-video-id');
-            if (this.isValidVideoId(videoId)) {
-                return videoId;
-            }
-        }
-
-        return null;
-    }
-
-    isValidVideoId(id) {
-        return id && /^[a-zA-Z0-9_-]{11}$/.test(id);
     }
 
     normalizeYouTubeUrl(url) {
@@ -558,23 +539,19 @@ class YouTubeToYtDlpExtension {
         notification.style.background = isError ? '#ff4444' : '#4CAF50';
         notification.style.borderColor = isError ? '#cc0000' : '#45a049';
 
-        // Добавляем уведомление в начало контейнера (сверху)
         queueContainer.insertBefore(notification, queueContainer.firstChild);
 
-        // Анимация появления - выезжает сверху
         notification.animate([
             { opacity: 0, transform: 'translateY(-100%) translateX(0)' },
             { opacity: 1, transform: 'translateY(0) translateX(0)' }
         ], { duration: 300, easing: 'ease-out' });
 
         setTimeout(() => {
-            // Анимация исчезновения - уезжает вправо
             notification.animate([
                 { opacity: 1, transform: 'translateY(0) translateX(0)' },
                 { opacity: 0, transform: 'translateY(0) translateX(100%)' }
             ], { duration: 300, easing: 'ease-in' }).onfinish = () => {
                 notification.remove();
-                
                 if (queueContainer.children.length === 0) {
                     queueContainer.remove();
                 }
