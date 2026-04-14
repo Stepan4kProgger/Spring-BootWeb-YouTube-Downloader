@@ -1,6 +1,7 @@
 class YouTubeToYtDlpExtension {
     constructor() {
         this.serverUrl = 'http://localhost:8080';
+        this.sendCookies = true; // По умолчанию включено
         this.processedThumbnails = new WeakSet();
         this.observer = null;
         this.notificationQueue = [];
@@ -18,14 +19,28 @@ class YouTubeToYtDlpExtension {
         } else {
             this.injectButtons();
         }
+
+        this.addMessageListener();
     }
 
     async loadSettings() {
         return new Promise((resolve) => {
-            chrome.storage.sync.get(['serverUrl'], (result) => {
+            chrome.storage.sync.get(['serverUrl', 'sendCookies'], (result) => {
                 this.serverUrl = result.serverUrl || this.serverUrl;
+                this.sendCookies = result.sendCookies !== false; // true по умолчанию
                 resolve();
             });
+        });
+    }
+
+    addMessageListener() {
+        chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
+            if (request.action === 'RELOAD_SETTINGS') {
+                this.loadSettings().then(() => {
+                    sendResponse({ success: true });
+                });
+                return true;
+            }
         });
     }
 
@@ -100,10 +115,6 @@ class YouTubeToYtDlpExtension {
                 position: relative !important;
             }
             
-            div#thumbnail.style-scope.ytd-rich-grid-media {
-                position: relative !important;
-            }
-            
             ytd-grid-video-renderer ytd-thumbnail {
                 position: relative !important;
             }
@@ -133,14 +144,12 @@ class YouTubeToYtDlpExtension {
                     if (node.nodeType === Node.ELEMENT_NODE) {
                         // Проверяем, добавлены ли наши целевые элементы
                         if (node.matches && (
-                            node.matches('a.yt-lockup-view-model__content-image[href*="/watch?v="]') ||
-                            node.matches('div#thumbnail.style-scope.ytd-rich-grid-media') ||
+                            node.matches('a.ytLockupViewModelContentImage[href*="/watch?v="]') ||
+                            node.matches('ytd-rich-item-renderer') ||
                             node.matches('ytd-grid-video-renderer') ||
                             node.matches('ytd-playlist-video-renderer') ||
                             node.matches('ytd-video-renderer') ||
                             node.querySelector && (
-                                node.querySelector('a.yt-lockup-view-model__content-image[href*="/watch?v="]') ||
-                                node.querySelector('div#thumbnail.style-scope.ytd-rich-grid-media') ||
                                 node.querySelector('ytd-grid-video-renderer a#thumbnail.yt-simple-endpoint[href*="/watch?v="]') ||
                                 node.querySelector('ytd-playlist-video-renderer a#thumbnail.yt-simple-endpoint[href*="/watch?v="]') ||
                                 node.querySelector('ytd-video-renderer a#thumbnail.yt-simple-endpoint[href*="/watch?v="]')
@@ -170,8 +179,8 @@ class YouTubeToYtDlpExtension {
     processThumbnails() {
         // Расширяем селекторы для всех типов миниатюр
         const videoContainers = document.querySelectorAll(`
-            a.yt-lockup-view-model__content-image[href*="/watch?v="],
-            div#thumbnail.style-scope.ytd-rich-grid-media,
+            a.ytLockupViewModelContentImage[href*="/watch?v="],
+            ytd-rich-item-renderer:not([hidden]) a.ytLockupViewModelContentImage[href*="/watch?v="],
             ytd-grid-video-renderer a#thumbnail.yt-simple-endpoint[href*="/watch?v="],
             ytd-playlist-video-renderer a#thumbnail.yt-simple-endpoint[href*="/watch?v="],
             ytd-video-renderer a#thumbnail.yt-simple-endpoint[href*="/watch?v="]
@@ -196,16 +205,11 @@ class YouTubeToYtDlpExtension {
         const button = this.createDownloadButton();
         
         // Для первого типа (новый интерфейс) - добавляем прямо в контейнер
-        if (container.matches('a.yt-lockup-view-model__content-image')) {
+        if (container.matches('a.ytLockupViewModelContentImage')) {
             container.style.position = 'relative';
             container.appendChild(button);
         } 
-        // Для второго типа (контейнер rich-grid-media) - добавляем в этот контейнер
-        else if (container.matches('div#thumbnail.style-scope.ytd-rich-grid-media')) {
-            container.style.position = 'relative';
-            container.appendChild(button);
-        }
-        // Для третьего типа (страница канала) - добавляем в родительский ytd-thumbnail
+        // Для второго типа (страница канала) - добавляем в родительский ytd-thumbnail
         else if (container.matches('ytd-grid-video-renderer a#thumbnail.yt-simple-endpoint')) {
             const thumbnailParent = container.closest('ytd-thumbnail');
             if (thumbnailParent) {
@@ -217,7 +221,7 @@ class YouTubeToYtDlpExtension {
                 container.appendChild(button);
             }
         }
-        // Для четвертого типа (плейлисты, включая "Понравившиеся") - добавляем в родительский ytd-thumbnail
+        // Для третьего типа (плейлисты, включая "Понравившиеся") - добавляем в родительский ytd-thumbnail
         else if (container.matches('ytd-playlist-video-renderer a#thumbnail.yt-simple-endpoint')) {
             const thumbnailParent = container.closest('ytd-thumbnail');
             if (thumbnailParent) {
@@ -229,7 +233,7 @@ class YouTubeToYtDlpExtension {
                 container.appendChild(button);
             }
         }
-        // Для пятого типа (раздел "История") - добавляем в родительский ytd-thumbnail
+        // Для четвертого типа (раздел "История") - добавляем в родительский ytd-thumbnail
         else if (container.matches('ytd-video-renderer a#thumbnail.yt-simple-endpoint')) {
             const thumbnailParent = container.closest('ytd-thumbnail');
             if (thumbnailParent) {
@@ -248,11 +252,13 @@ class YouTubeToYtDlpExtension {
             
             // Для разных типов контейнеров находим соответствующий элемент с видео
             let videoElement = container;
-            if (container.matches('div#thumbnail.style-scope.ytd-rich-grid-media')) {
-                const videoLink = container.querySelector('a[href*="/watch?v="]');
-                if (videoLink) {
-                    videoElement = videoLink;
-                }
+            if (container.matches('a.ytLockupViewModelContentImage')) {
+                // Ссылка уже является самим контейнером
+                videoElement = container;
+            } else if (container.closest('ytd-rich-item-renderer')) {
+                // Для вложенных случаев
+                const videoLink = container.closest('ytd-rich-item-renderer').querySelector('a.ytLockupViewModelContentImage[href*="/watch?v="]');
+                if (videoLink) videoElement = videoLink;
             }
             
             this.handleDownloadClick(videoElement);
@@ -262,7 +268,7 @@ class YouTubeToYtDlpExtension {
     createDownloadButton() {
         const button = document.createElement('button');
         button.innerHTML = '⬇️';
-        button.title = 'Скачать через YT-DLP (с передачей куки авторизации)';
+        button.title = 'Скачать через YT-DLP';
         button.className = 'yt-dlp-download-btn';
         return button;
     }
@@ -277,6 +283,7 @@ class YouTubeToYtDlpExtension {
             }
 
             console.log('Извлеченный URL:', videoUrl);
+            console.log('Настройки cookie:', this.sendCookies);
             
             // Получаем ID текущей вкладки
             const tabId = await this.getCurrentTabId();
@@ -285,8 +292,15 @@ class YouTubeToYtDlpExtension {
             const requestId = Date.now().toString();
             this.pendingDownloads.set(requestId, { videoUrl, startTime: Date.now() });
             
-            // Показываем уведомление о начале загрузки - оно автоматически исчезнет через 5 секунд
-            this.showProgressNotification('Отправка видео на скачивание... Сервер обрабатывает запрос...');
+            // Обновляем сообщение в зависимости от настроек cookie
+            let progressMessage = 'Отправка видео на скачивание...';
+            if (!this.sendCookies) {
+                progressMessage += ' (без передачи cookie)';
+            } else {
+                progressMessage += ' (с передачей cookie)';
+            }
+            
+            this.showProgressNotification(progressMessage);
             
             chrome.runtime.sendMessage({
                 action: 'DOWNLOAD_VIDEO',
@@ -306,10 +320,23 @@ class YouTubeToYtDlpExtension {
                     const errorMsg = response?.error || 'Неизвестная ошибка';
                     console.error('Download error:', errorMsg);
                     
-                    // Улучшенные сообщения об ошибках сети
-                    if (errorMsg.includes('Сервер не ответил в течение 10 минут') || 
-                        errorMsg.includes('Таймаут соединения') ||
-                        errorMsg.includes('AbortError')) {
+                    // Если cookie отключены и ошибка связана с доступом
+                    if (!this.sendCookies && (
+                        errorMsg.includes('authorized') || 
+                        errorMsg.includes('auth') || 
+                        errorMsg.includes('login') ||
+                        errorMsg.includes('private') ||
+                        errorMsg.includes('age-restricted')
+                    )) {
+                        this.showNotification(
+                            '❌ Для скачивания этого видео необходима передача cookie.\n\n' +
+                            'Включите "Передавать cookie-файлы" в настройках расширения\n' +
+                            'и убедитесь, что вы авторизованы на YouTube.',
+                            true
+                        );
+                    } else if (errorMsg.includes('Сервер не ответил в течение 10 минут') || 
+                            errorMsg.includes('Таймаут соединения') ||
+                            errorMsg.includes('AbortError')) {
                         
                         this.showNotification(
                             '✅ Запрос на скачивание принят сервером!\n\n' +
@@ -328,15 +355,10 @@ class YouTubeToYtDlpExtension {
                             '3. Проверьте блокировку брандмауэром', 
                             true
                         );
-                    } else if (errorMsg.includes('authorized') || errorMsg.includes('auth') || errorMsg.includes('login')) {
-                        this.showNotification('Ошибка авторизации. Убедитесь, что вы вошли в аккаунт YouTube и перезагрузите страницу.', true);
                     } else {
                         this.showNotification('Ошибка загрузки: ' + errorMsg, true);
                     }
                 }
-                
-                // УДАЛЕН БЛОК, который удалял прогресс-уведомление через 2 секунды
-                // Теперь прогресс-уведомление автоматически исчезнет через 5 секунд
             });
             
         } catch (error) {
@@ -435,11 +457,13 @@ class YouTubeToYtDlpExtension {
 
     extractVideoUrl(element) {
         // Если это контейнер rich-grid-media, ищем ссылку внутри
-        if (element.matches('div#thumbnail.style-scope.ytd-rich-grid-media')) {
-            const videoLink = element.querySelector('a[href*="/watch?v="]');
-            if (videoLink?.href) {
-                return this.normalizeYouTubeUrl(videoLink.href);
-            }
+        if (element.matches('a.ytLockupViewModelContentImage')) {
+            return this.normalizeYouTubeUrl(element.href);
+        }
+        // Для ytd-rich-item-renderer ищем вложенную ссылку
+        if (element.closest('ytd-rich-item-renderer')) {
+            const link = element.closest('ytd-rich-item-renderer').querySelector('a.ytLockupViewModelContentImage[href*="/watch?v="]');
+            if (link) return this.normalizeYouTubeUrl(link.href);
         }
         // Для остальных случаев работаем как раньше
         else if (element.href) {
