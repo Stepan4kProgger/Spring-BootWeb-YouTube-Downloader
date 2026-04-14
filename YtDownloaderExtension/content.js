@@ -115,6 +115,10 @@ class YouTubeToYtDlpExtension {
                 position: relative !important;
             }
             
+            div#thumbnail.style-scope.ytd-rich-grid-media {
+                position: relative !important;
+            }
+            
             ytd-grid-video-renderer ytd-thumbnail {
                 position: relative !important;
             }
@@ -150,6 +154,8 @@ class YouTubeToYtDlpExtension {
                             node.matches('ytd-playlist-video-renderer') ||
                             node.matches('ytd-video-renderer') ||
                             node.querySelector && (
+                                node.querySelector('a.yt-lockup-view-model__content-image[href*="/watch?v="]') ||
+                                node.querySelector('div#thumbnail.style-scope.ytd-rich-grid-media') ||
                                 node.querySelector('ytd-grid-video-renderer a#thumbnail.yt-simple-endpoint[href*="/watch?v="]') ||
                                 node.querySelector('ytd-playlist-video-renderer a#thumbnail.yt-simple-endpoint[href*="/watch?v="]') ||
                                 node.querySelector('ytd-video-renderer a#thumbnail.yt-simple-endpoint[href*="/watch?v="]')
@@ -209,7 +215,12 @@ class YouTubeToYtDlpExtension {
             container.style.position = 'relative';
             container.appendChild(button);
         } 
-        // Для второго типа (страница канала) - добавляем в родительский ytd-thumbnail
+        // Для второго типа (контейнер rich-grid-media) - добавляем в этот контейнер
+        else if (container.matches('div#thumbnail.style-scope.ytd-rich-grid-media')) {
+            container.style.position = 'relative';
+            container.appendChild(button);
+        }
+        // Для третьего типа (страница канала) - добавляем в родительский ytd-thumbnail
         else if (container.matches('ytd-grid-video-renderer a#thumbnail.yt-simple-endpoint')) {
             const thumbnailParent = container.closest('ytd-thumbnail');
             if (thumbnailParent) {
@@ -221,7 +232,7 @@ class YouTubeToYtDlpExtension {
                 container.appendChild(button);
             }
         }
-        // Для третьего типа (плейлисты, включая "Понравившиеся") - добавляем в родительский ytd-thumbnail
+        // Для четвертого типа (плейлисты, включая "Понравившиеся") - добавляем в родительский ytd-thumbnail
         else if (container.matches('ytd-playlist-video-renderer a#thumbnail.yt-simple-endpoint')) {
             const thumbnailParent = container.closest('ytd-thumbnail');
             if (thumbnailParent) {
@@ -233,7 +244,7 @@ class YouTubeToYtDlpExtension {
                 container.appendChild(button);
             }
         }
-        // Для четвертого типа (раздел "История") - добавляем в родительский ytd-thumbnail
+        // Для пятого типа (раздел "История") - добавляем в родительский ytd-thumbnail
         else if (container.matches('ytd-video-renderer a#thumbnail.yt-simple-endpoint')) {
             const thumbnailParent = container.closest('ytd-thumbnail');
             if (thumbnailParent) {
