@@ -115,10 +115,6 @@ class YouTubeToYtDlpExtension {
                 position: relative !important;
             }
             
-            div#thumbnail.style-scope.ytd-rich-grid-media {
-                position: relative !important;
-            }
-            
             ytd-grid-video-renderer ytd-thumbnail {
                 position: relative !important;
             }
@@ -148,14 +144,12 @@ class YouTubeToYtDlpExtension {
                     if (node.nodeType === Node.ELEMENT_NODE) {
                         // Проверяем, добавлены ли наши целевые элементы
                         if (node.matches && (
-                            node.matches('a.yt-lockup-view-model__content-image[href*="/watch?v="]') ||
-                            node.matches('div#thumbnail.style-scope.ytd-rich-grid-media') ||
+                            node.matches('a.ytLockupViewModelContentImage[href*="/watch?v="]') ||
+                            node.matches('ytd-rich-item-renderer') ||
                             node.matches('ytd-grid-video-renderer') ||
                             node.matches('ytd-playlist-video-renderer') ||
                             node.matches('ytd-video-renderer') ||
                             node.querySelector && (
-                                node.querySelector('a.yt-lockup-view-model__content-image[href*="/watch?v="]') ||
-                                node.querySelector('div#thumbnail.style-scope.ytd-rich-grid-media') ||
                                 node.querySelector('ytd-grid-video-renderer a#thumbnail.yt-simple-endpoint[href*="/watch?v="]') ||
                                 node.querySelector('ytd-playlist-video-renderer a#thumbnail.yt-simple-endpoint[href*="/watch?v="]') ||
                                 node.querySelector('ytd-video-renderer a#thumbnail.yt-simple-endpoint[href*="/watch?v="]')
@@ -185,8 +179,8 @@ class YouTubeToYtDlpExtension {
     processThumbnails() {
         // Расширяем селекторы для всех типов миниатюр
         const videoContainers = document.querySelectorAll(`
-            a.yt-lockup-view-model__content-image[href*="/watch?v="],
-            div#thumbnail.style-scope.ytd-rich-grid-media,
+            a.ytLockupViewModelContentImage[href*="/watch?v="],
+            ytd-rich-item-renderer:not([hidden]) a.ytLockupViewModelContentImage[href*="/watch?v="],
             ytd-grid-video-renderer a#thumbnail.yt-simple-endpoint[href*="/watch?v="],
             ytd-playlist-video-renderer a#thumbnail.yt-simple-endpoint[href*="/watch?v="],
             ytd-video-renderer a#thumbnail.yt-simple-endpoint[href*="/watch?v="]
@@ -211,16 +205,11 @@ class YouTubeToYtDlpExtension {
         const button = this.createDownloadButton();
         
         // Для первого типа (новый интерфейс) - добавляем прямо в контейнер
-        if (container.matches('a.yt-lockup-view-model__content-image')) {
+        if (container.matches('a.ytLockupViewModelContentImage')) {
             container.style.position = 'relative';
             container.appendChild(button);
         } 
-        // Для второго типа (контейнер rich-grid-media) - добавляем в этот контейнер
-        else if (container.matches('div#thumbnail.style-scope.ytd-rich-grid-media')) {
-            container.style.position = 'relative';
-            container.appendChild(button);
-        }
-        // Для третьего типа (страница канала) - добавляем в родительский ytd-thumbnail
+        // Для второго типа (страница канала) - добавляем в родительский ytd-thumbnail
         else if (container.matches('ytd-grid-video-renderer a#thumbnail.yt-simple-endpoint')) {
             const thumbnailParent = container.closest('ytd-thumbnail');
             if (thumbnailParent) {
@@ -232,7 +221,7 @@ class YouTubeToYtDlpExtension {
                 container.appendChild(button);
             }
         }
-        // Для четвертого типа (плейлисты, включая "Понравившиеся") - добавляем в родительский ytd-thumbnail
+        // Для третьего типа (плейлисты, включая "Понравившиеся") - добавляем в родительский ytd-thumbnail
         else if (container.matches('ytd-playlist-video-renderer a#thumbnail.yt-simple-endpoint')) {
             const thumbnailParent = container.closest('ytd-thumbnail');
             if (thumbnailParent) {
@@ -244,7 +233,7 @@ class YouTubeToYtDlpExtension {
                 container.appendChild(button);
             }
         }
-        // Для пятого типа (раздел "История") - добавляем в родительский ytd-thumbnail
+        // Для четвертого типа (раздел "История") - добавляем в родительский ytd-thumbnail
         else if (container.matches('ytd-video-renderer a#thumbnail.yt-simple-endpoint')) {
             const thumbnailParent = container.closest('ytd-thumbnail');
             if (thumbnailParent) {
@@ -263,11 +252,13 @@ class YouTubeToYtDlpExtension {
             
             // Для разных типов контейнеров находим соответствующий элемент с видео
             let videoElement = container;
-            if (container.matches('div#thumbnail.style-scope.ytd-rich-grid-media')) {
-                const videoLink = container.querySelector('a[href*="/watch?v="]');
-                if (videoLink) {
-                    videoElement = videoLink;
-                }
+            if (container.matches('a.ytLockupViewModelContentImage')) {
+                // Ссылка уже является самим контейнером
+                videoElement = container;
+            } else if (container.closest('ytd-rich-item-renderer')) {
+                // Для вложенных случаев
+                const videoLink = container.closest('ytd-rich-item-renderer').querySelector('a.ytLockupViewModelContentImage[href*="/watch?v="]');
+                if (videoLink) videoElement = videoLink;
             }
             
             this.handleDownloadClick(videoElement);
@@ -466,11 +457,13 @@ class YouTubeToYtDlpExtension {
 
     extractVideoUrl(element) {
         // Если это контейнер rich-grid-media, ищем ссылку внутри
-        if (element.matches('div#thumbnail.style-scope.ytd-rich-grid-media')) {
-            const videoLink = element.querySelector('a[href*="/watch?v="]');
-            if (videoLink?.href) {
-                return this.normalizeYouTubeUrl(videoLink.href);
-            }
+        if (element.matches('a.ytLockupViewModelContentImage')) {
+            return this.normalizeYouTubeUrl(element.href);
+        }
+        // Для ytd-rich-item-renderer ищем вложенную ссылку
+        if (element.closest('ytd-rich-item-renderer')) {
+            const link = element.closest('ytd-rich-item-renderer').querySelector('a.ytLockupViewModelContentImage[href*="/watch?v="]');
+            if (link) return this.normalizeYouTubeUrl(link.href);
         }
         // Для остальных случаев работаем как раньше
         else if (element.href) {
