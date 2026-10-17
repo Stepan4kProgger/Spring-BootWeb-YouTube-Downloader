@@ -5,7 +5,7 @@ import org.springframework.boot.autoconfigure.SpringBootApplication;
 
 @SpringBootApplication
 public class LauncherApplication {
-    public static void main(String[] args) throws InterruptedException {
+    public static void main(String[] args) {
         try {
             SpringApplication.run(LauncherApplication.class, args);
         } catch (Exception e) {

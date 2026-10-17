@@ -9,9 +9,7 @@ import java.io.BufferedReader;
 import java.io.IOException;
 import java.io.InputStreamReader;
 import java.nio.file.Files;
-import java.nio.file.Path;
 import java.nio.file.Paths;
-import java.util.concurrent.TimeUnit;
 
 @Slf4j
 @Service
@@ -23,28 +21,17 @@ public class ProcessLauncherService {
     @Value("${app.application.path:./application/demo.jar}")
     private String applicationPath;
 
-    @Value("${app.updater.timeout:30000}")
-    private long updaterTimeout;
-
-    public ProcessLauncherService() {
-        // Пустой конструктор для Spring
-    }
-
-    public boolean runUpdater() {
+    public void runUpdater() {
         if (!Files.exists(Paths.get(updaterPath))) {
-            log.warn("Updater не найден: {}. Пропускаем обновление.", updaterPath);
-            return true; // Продолжаем работу, т.к. updater опционален
+            log.warn("Updater не найден: {} | Пропускаем обновление", updaterPath);
+            return;
         }
-
         log.info("Запуск updater: {}", updaterPath);
-        ProcessInfo result = runJarProcess(updaterPath, updaterTimeout);
-
+        ProcessInfo result = runAndWait(updaterPath);
         if (!result.isSuccess()) {
             log.warn("Updater завершился с ошибкой (код: {}), но продолжаем запуск",
                     result.getExitCode());
         }
-
-        return result.isSuccess();
     }
 
     public boolean runApplication() {
@@ -52,83 +39,71 @@ public class ProcessLauncherService {
             log.error("Основное приложение не найдено: {}", applicationPath);
             return false;
         }
-
         try {
-            ProcessBuilder processBuilder = new ProcessBuilder(
-                    "java", "-jar", applicationPath
-            );
-
-            processBuilder.inheritIO();
-            Process process = processBuilder.start();
-
+            new ProcessBuilder("java", "-jar", applicationPath).inheritIO().start();
             log.info("Основное приложение запущено успешно");
             return true;
-
         } catch (IOException e) {
             log.error("Ошибка при запуске основного приложения: {}", e.getMessage(), e);
             return false;
         }
     }
 
-    private ProcessInfo runJarProcess(String jarPath, long timeoutMs) {
-        ProcessInfo processInfo = new ProcessInfo();
+    private ProcessInfo runAndWait(String jarPath) {
         long startTime = System.currentTimeMillis();
-
+        Process process = null;
         try {
-            ProcessBuilder processBuilder = new ProcessBuilder(
-                    "java", "-jar", jarPath
-            );
+            process = new ProcessBuilder("java", "-jar", jarPath)
+                    .redirectErrorStream(true)
+                    .start();
 
-            processBuilder.redirectErrorStream(true);
-            Process process = processBuilder.start();
+            String output = readOutput(process);
+            int exitCode = process.waitFor();
 
-            StringBuilder output = new StringBuilder();
-            try (BufferedReader reader = new BufferedReader(
-                    new InputStreamReader(process.getInputStream()))) {
-
-                String line;
-                while ((line = reader.readLine()) != null) {
-                    output.append(line).append("\n");
-                    log.info("Process output: {}", line);
-                }
-            }
-
-            boolean finished = process.waitFor(timeoutMs, TimeUnit.MILLISECONDS);
-
-            if (finished) {
-                processInfo.setExitCode(process.exitValue());
-                processInfo.setSuccess(process.exitValue() == 0);
-            } else {
-                process.destroy();
-                processInfo.setExitCode(-2);
-                processInfo.setSuccess(false);
-                output.append("\nProcess timeout exceeded");
-            }
-
-            processInfo.setOutput(output.toString());
-            processInfo.setExecutionTime(System.currentTimeMillis() - startTime);
-
+            ProcessInfo info = ProcessInfo.completed(exitCode, output, elapsedSince(startTime));
             log.info("Процесс завершен с кодом: {}, время: {}ms",
-                    processInfo.getExitCode(), processInfo.getExecutionTime());
+                    info.getExitCode(), info.getExecutionTime());
+            return info;
 
-        } catch (IOException | InterruptedException e) {
-            log.error("Ошибка при запуске процесса: {}", e.getMessage(), e);
-            processInfo.setExitCode(-1);
-            processInfo.setSuccess(false);
-            processInfo.setOutput("Error: " + e.getMessage());
+        } catch (InterruptedException e) {
             Thread.currentThread().interrupt();
+            destroyQuietly(process);
+            log.error("Прерывание при ожидании процесса: {}", e.getMessage(), e);
+            return ProcessInfo.failed(e.getMessage(), elapsedSince(startTime));
+        } catch (IOException e) {
+            log.error("Ошибка при запуске процесса: {}", e.getMessage(), e);
+            return ProcessInfo.failed(e.getMessage(), elapsedSince(startTime));
         }
+    }
 
-        return processInfo;
+    private String readOutput(Process process) throws IOException {
+        StringBuilder output = new StringBuilder();
+        try (BufferedReader reader = new BufferedReader(
+                new InputStreamReader(process.getInputStream()))) {
+            String line;
+            while ((line = reader.readLine()) != null) {
+                output.append(line).append('\n');
+                log.info("Updater output: {}", line);
+            }
+        }
+        return output.toString();
+    }
+
+    private void destroyQuietly(Process process) {
+        if (process != null && process.isAlive()) {
+            process.destroyForcibly();
+        }
+    }
+
+    private long elapsedSince(long startTime) {
+        return System.currentTimeMillis() - startTime;
     }
 
     public boolean checkFilesExist() {
         boolean updaterExists = Files.exists(Paths.get(updaterPath));
         boolean appExists = Files.exists(Paths.get(applicationPath));
-
         log.info("Updater exists: {}", updaterExists);
         log.info("Application exists: {}", appExists);
-
-        return appExists; // Главное - наличие основного приложения
+        return appExists;
     }
 }

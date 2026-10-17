@@ -1,8 +1,9 @@
 package com.example.launcher.service;
 
 import lombok.extern.slf4j.Slf4j;
-import org.springframework.beans.factory.annotation.Value;
+import org.springframework.boot.SpringApplication;
 import org.springframework.boot.context.event.ApplicationReadyEvent;
+import org.springframework.context.ConfigurableApplicationContext;
 import org.springframework.context.event.EventListener;
 import org.springframework.stereotype.Service;
 
@@ -11,38 +12,33 @@ import org.springframework.stereotype.Service;
 public class LaunchManagerService {
 
     private final ProcessLauncherService processLauncherService;
+    private final ConfigurableApplicationContext context;
 
-    @Value("${app.startup.delay:1000}")
-    private long startupDelay;
-
-    public LaunchManagerService(ProcessLauncherService processLauncherService) {
+    public LaunchManagerService(ProcessLauncherService processLauncherService, ConfigurableApplicationContext context) {
         this.processLauncherService = processLauncherService;
+        this.context = context;
     }
 
     @EventListener(ApplicationReadyEvent.class)
     public void launchApplications() {
         try {
-            log.info("Запуск лаунчера... Ожидание {}ms", startupDelay);
-            Thread.sleep(startupDelay);
+            log.info("Запуск лаунчера");
 
-            // Проверяем только основное приложение
             if (!processLauncherService.checkFilesExist()) {
-                log.error("Основное приложение не найдено. Завершение работы.");
+                log.error("Основное приложение не найдено | Завершение работы");
                 Thread.sleep(5000);
-                return; // Просто возвращаемся, не завершаем приложение
+                return;
             }
 
             log.info("=== ЗАПУСК ОБНОВЛЕНИЯ ===");
-            processLauncherService.runUpdater(); // updater опционален
-
-            Thread.sleep(1000);
+            processLauncherService.runUpdater();
 
             log.info("=== ЗАПУСК ОСНОВНОГО ПРИЛОЖЕНИЯ ===");
             boolean appStarted = processLauncherService.runApplication();
 
             if (appStarted) {
-                log.info("Лаунчер завершает работу. Основное приложение работает.");
-                // Spring Boot приложение продолжит работать в фоне
+                log.info("Основное приложение запущено | Завершаем работу лаунчера");
+                System.exit(SpringApplication.exit(context, () -> 0));
             } else {
                 log.error("Не удалось запустить основное приложение");
             }
