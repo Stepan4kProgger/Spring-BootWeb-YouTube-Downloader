@@ -12,13 +12,10 @@ public class ProgressDialog {
         if (GraphicsEnvironment.isHeadless()) {
             return;
         }
-
-        // Проверяем, находимся ли мы в EDT
         if (SwingUtilities.isEventDispatchThread()) {
             initializeDialog();
         } else {
             try {
-                // Если не в EDT, используем invokeAndWait
                 SwingUtilities.invokeAndWait(this::initializeDialog);
             } catch (Exception e) {
                 e.printStackTrace();
@@ -27,14 +24,12 @@ public class ProgressDialog {
     }
 
     private void initializeDialog() {
-        JFrame parentFrame = new JFrame();
-        parentFrame.setAlwaysOnTop(true);
-
-        dialog = new JDialog(parentFrame, "Обновление", true);
+        dialog = new JDialog((Frame) null, "Обновление", true);
         dialog.setDefaultCloseOperation(JDialog.DO_NOTHING_ON_CLOSE);
         dialog.setSize(350, 120);
         dialog.setLocationRelativeTo(null);
         dialog.setResizable(false);
+        dialog.setAlwaysOnTop(true);
 
         JPanel panel = new JPanel(new BorderLayout(5, 5));
         panel.setBorder(BorderFactory.createEmptyBorder(10, 10, 10, 10));
@@ -45,15 +40,13 @@ public class ProgressDialog {
 
         panel.add(messageLabel, BorderLayout.NORTH);
         panel.add(progressBar, BorderLayout.CENTER);
-
         dialog.add(panel);
     }
 
     public void setVisible(boolean visible) {
         if (dialog == null) return;
-
         if (SwingUtilities.isEventDispatchThread()) {
-            dialog.setVisible(visible);
+            dialog.setVisible(visible);   // для модального — блокирует EDT до dispose
             if (visible) {
                 dialog.toFront();
                 dialog.requestFocus();
@@ -71,7 +64,6 @@ public class ProgressDialog {
 
     public void setMessage(String message) {
         if (messageLabel == null) return;
-
         if (SwingUtilities.isEventDispatchThread()) {
             messageLabel.setText(message);
             dialog.pack();
@@ -85,41 +77,25 @@ public class ProgressDialog {
 
     public void setProgress(int progress) {
         if (progressBar == null) return;
-
         SwingUtilities.invokeLater(() -> {
             progressBar.setValue(progress);
             progressBar.setString(progress + "%");
-            progressBar.repaint(); // Принудительная перерисовка
+            progressBar.repaint();
         });
     }
 
     public void close() {
         if (dialog == null) return;
-
+        Runnable task = () -> dialog.dispose();
         if (SwingUtilities.isEventDispatchThread()) {
-            dialog.dispose();
-            Window[] windows = Window.getWindows();
-            for (Window window : windows) {
-                if (window.isDisplayable()) {
-                    window.dispose();
-                }
-            }
+            task.run();
         } else {
-            SwingUtilities.invokeLater(() -> {
-                dialog.dispose();
-                Window[] windows = Window.getWindows();
-                for (Window window : windows) {
-                    if (window.isDisplayable()) {
-                        window.dispose();
-                    }
-                }
-            });
+            SwingUtilities.invokeLater(task);
         }
     }
 
     public void setIndeterminate(boolean indeterminate) {
         if (progressBar == null) return;
-
         SwingUtilities.invokeLater(() -> {
             progressBar.setIndeterminate(indeterminate);
             progressBar.setStringPainted(!indeterminate);
