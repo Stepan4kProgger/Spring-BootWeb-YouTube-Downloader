@@ -4,7 +4,6 @@ import com.example.ytdlp.utils.model.DownloadRequest;
 import com.example.ytdlp.utils.model.VideoInfo;
 import com.fasterxml.jackson.databind.DeserializationFeature;
 import com.fasterxml.jackson.databind.ObjectMapper;
-import lombok.AllArgsConstructor;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Value;
@@ -36,7 +35,6 @@ public class VideoInfoService {
 
         Process process = processBuilder.start();
 
-        // Читаем stdout
         try (BufferedReader reader = new BufferedReader(
                 new InputStreamReader(process.getInputStream(), StandardCharsets.UTF_8))) {
             String line;
@@ -45,7 +43,6 @@ public class VideoInfoService {
             }
         }
 
-        // Читаем stderr для диагностики
         try (BufferedReader errorReader = new BufferedReader(
                 new InputStreamReader(process.getErrorStream(), StandardCharsets.UTF_8))) {
             String line;
@@ -58,11 +55,10 @@ public class VideoInfoService {
 
         if (exitCode != 0) {
             log.error("Video info command failed with exit code: {}", exitCode);
-            log.error("Error output: {}", errorOutput.toString());
+            log.error("Error output: {}", errorOutput);
             throw new IOException("Failed to get video info, exit code: " + exitCode + ". Error: " + errorOutput.toString());
         }
 
-        // Проверяем, что вывод не пустой
         if (output.isEmpty()) {
             throw new IOException("Video info command returned empty output");
         }
@@ -72,7 +68,6 @@ public class VideoInfoService {
             objectMapper.configure(DeserializationFeature.FAIL_ON_UNKNOWN_PROPERTIES, false);
             VideoInfo videoInfo = objectMapper.readValue(output.toString(), VideoInfo.class);
 
-            // Логируем основную информацию о видео
             log.info("Video info retrieved: '{}' (ID: {}), {} formats available",
                     videoInfo.getTitle(), videoInfo.getId(),
                     videoInfo.getFormats() != null ? videoInfo.getFormats().size() : 0);
@@ -84,13 +79,11 @@ public class VideoInfoService {
         }
     }
 
-    // Команда для получения информации о видео
     private List<String> buildVideoInfoCommand(DownloadRequest request) throws IOException {
         List<String> command = new ArrayList<>();
         command.add(ytDlpPath);
         command.add(request.getUrl());
 
-        // Добавляем куки если есть
         if (request.getCookies() != null && !request.getCookies().trim().isEmpty()) {
             Path cookiesFile = Files.createTempFile("cookies_info_" + System.currentTimeMillis(), ".txt");
             String formattedCookies = tempFileService.formatCookiesForNetscape(request.getCookies());
@@ -101,10 +94,13 @@ public class VideoInfoService {
             command.add(cookiesFile.toString());
         }
 
+        command.add("--js-runtimes");
+        command.add("node");
+        command.add("--remote-components");
+        command.add("ejs:github");
+
         command.add("--dump-json");
         command.add("--no-playlist");
-
-        // ДОБАВИТЬ ЭТИ ПАРАМЕТРЫ ДЛЯ НАДЕЖНОСТИ
         command.add("--no-check-certificate");
         command.add("--prefer-insecure");
         command.add("--force-ipv4");

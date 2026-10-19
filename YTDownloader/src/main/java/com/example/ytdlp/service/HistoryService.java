@@ -44,12 +44,26 @@ class HistoryService {
                     new TypeReference<>() {}
             );
 
+
+
+            boolean normalized = false;
+            for (DownloadProgress p : loadedHistory) {
+                if ("finalizing".equals(p.getStatus()) && p.getEndTime() != null) {
+                    p.setStatus("completed");
+                    p.setProgress(100);
+                    normalized = true;
+                }
+            }
+
             downloadHistory.clear();
             downloadHistory.addAll(loadedHistory);
+            if (normalized) {
+                saveDownloadHistory();
+            }
             log.info("Loaded {} items from download history", downloadHistory.size());
 
         } catch (Exception e) {
-            log.error("Error loading download history from JSON format. Creating empty history.", e);
+            log.error("Error loading download history. Creating empty history.", e);
             downloadHistory.clear();
             saveDownloadHistory();
         }
@@ -91,7 +105,7 @@ class HistoryService {
 
                     if (aTime == null) return 1;
                     if (bTime == null) return -1;
-                    return bTime.compareTo(aTime); // новые выше старых
+                    return bTime.compareTo(aTime);
                 })
                 .collect(Collectors.toList());
     }

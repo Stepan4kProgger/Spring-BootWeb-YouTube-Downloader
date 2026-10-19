@@ -1,16 +1,17 @@
 package com.example.ytdlp.service;
 
-import com.example.ytdlp.utils.model.*;
 import com.example.ytdlp.config.ApplicationConfig;
+import com.example.ytdlp.utils.model.DownloadProgress;
+import com.example.ytdlp.utils.model.DownloadRequest;
+import com.example.ytdlp.utils.model.DownloadResponse;
 import jakarta.annotation.PostConstruct;
-import lombok.Data;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Service;
 
-import java.io.*;
-import java.util.*;
+import java.io.IOException;
+import java.util.List;
 
 @Slf4j
 @Service
@@ -19,7 +20,6 @@ public class YtDlpService {
     private final DownloadManagementService downloadManagementService;
     private final ProgressTrackingService progressTrackingService;
     private final HistoryService historyService;
-    private final FileSystemService fileSystemService;
     private final ProcessControlService processControlService;
     private final UtilityService utilityService;
 
@@ -37,30 +37,9 @@ public class YtDlpService {
         }
     }
 
-    // Метод для получения списка доступных дисков/папок
-    public List<String> getAvailableDrives() {
-        return fileSystemService.getAvailableDrives();
-    }
-
-    // Метод для получения содержимого директории
-    public List<DirectoryItem> listDirectory(String path) throws IOException {
-        return fileSystemService.listDirectory(path);
-    }
-
-    @Data
-    public static class DirectoryItem {
-        private String name;
-        private String path;
-        private boolean isDirectory;
-        private String size;
-        private Date lastModified;
-    }
-
     public DownloadResponse downloadVideo(DownloadRequest request) {
         return downloadManagementService.downloadVideo(request);
     }
-
-
 
     public String getYtDlpVersion() {
         return utilityService.getYtDlpVersion();
@@ -90,21 +69,8 @@ public class YtDlpService {
         return processControlService.cancelDownload(downloadId);
     }
 
-
     public boolean deleteDownloadedFile(String downloadId) {
         return processControlService.deleteDownloadedFile(downloadId);
-    }
-
-    public Map<String, String> getActiveProcessesInfo() {
-        Map<String, String> info = new HashMap<>();
-        for (Map.Entry<String, Process> entry : progressTrackingService.getActiveProcesses().entrySet()) {
-            Process process = entry.getValue();
-            info.put(entry.getKey(),
-                    process != null ?
-                            "Alive: " + process.isAlive() :
-                            "Null process");
-        }
-        return info;
     }
 
     public void stopAllDownloads() {

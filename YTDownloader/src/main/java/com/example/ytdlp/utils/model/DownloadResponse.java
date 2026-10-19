@@ -13,8 +13,4 @@ public class DownloadResponse {
     private String outputPath;
     private String filename;
     private String error;
-
-    public DownloadResponse(boolean success, String message, String outputPath, String filename) {
-        this(success, message, outputPath, filename, null);
-    }
 }

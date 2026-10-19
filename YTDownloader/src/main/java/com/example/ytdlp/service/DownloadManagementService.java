@@ -22,12 +22,23 @@ import java.util.ArrayList;
 import java.util.List;
 import java.util.UUID;
 
-import static java.nio.file.Files.createTempFile;
-
 @Slf4j
 @Service
 @RequiredArgsConstructor
 class DownloadManagementService {
+
+    /**
+     * Предпочитаемый язык аудиодорожки.
+     * yt-dlp отдаёт поле {@code language} в формате BCP-47: "ru", "en-US", "de-DE" и т.п.
+     * <ul>
+     *   <li>"ru"     — брать русскую, если есть; иначе оригинальную;</li>
+     *   <li>"en-US"  — брать английскую (US);</li>
+     *   <li>null     — не отдавать предпочтения языку, брать только оригинальную (language_preference >= 10).</li>
+     * </ul>
+     * Значение передаётся в {@link FormatSelectionService#selectFormats} и там учитывается
+     * при сортировке аудиоформатов.
+     */
+
     private final VideoInfoService videoInfoService;
     private final FormatSelectionService formatSelectionService;
     private final ProgressTrackingService progressTrackingService;
@@ -49,8 +60,12 @@ class DownloadManagementService {
         try {
             VideoInfo videoInfo = videoInfoService.getVideoInfo(request);
 
-            FormatSelection formats = formatSelectionService.selectFormats(videoInfo,
-                    appConfig.getQuality(), appConfig.isCompatibilityMode());
+            FormatSelection formats = formatSelectionService.selectFormats(
+                    videoInfo,
+                    appConfig.getQuality(),
+                    appConfig.isCompatibilityMode());
+
+            progress.setTotalStages(formats.isCombined() ? 3 : 5);
 
             Path finalFile = executeDownload(request, videoInfo, formats, progress);
             return completeDownload(progress, finalFile);
@@ -69,7 +84,6 @@ class DownloadManagementService {
         Path finalOutputFile;
 
         try {
-            // Проверяем существование yt-dlp и ffmpeg
             if (!Files.exists(Paths.get(ytDlpPath))) {
                 throw new IOException("yt-dlp not found at: " + ytDlpPath);
             }
@@ -77,66 +91,50 @@ class DownloadManagementService {
                 throw new IOException("ffmpeg not found at: " + ffmpegPath);
             }
 
-            // Создаем директорию для загрузок
             Path downloadDir = Paths.get(appConfig.getDirectory());
             if (!Files.exists(downloadDir)) {
                 Files.createDirectories(downloadDir);
-                log.info("Created download directory: {}", downloadDir);
             }
 
-            // Создаем файл куки если нужно
             cookiesFile = tempFileService.createCookiesFile(request);
 
-            // Генерируем финальное имя файла
             String finalFilename = utilityService.generateFinalFilenameFromVideoInfo(videoInfo);
             finalOutputFile = downloadDir.resolve(finalFilename);
-
-            // Если файл уже существует, добавляем суффикс
             if (Files.exists(finalOutputFile)) {
                 String baseName = finalFilename.substring(0, finalFilename.lastIndexOf('.'));
                 String extension = finalFilename.substring(finalFilename.lastIndexOf('.'));
                 finalFilename = baseName + "_" + System.currentTimeMillis() + extension;
                 finalOutputFile = downloadDir.resolve(finalFilename);
-                log.info("File already exists, using new name: {}", finalFilename);
             }
 
             if (formats.isCombined()) {
-                // Комбинированный формат
-                log.info("Using COMBINED format download");
-                progressTrackingService.updateProgress(progress.getDownloadId(), "downloading_combined", 20);
+                progressTrackingService.updateStage(progress, "downloading_combined", 2);
 
                 String tempPrefix = "temp_" + progress.getDownloadId() + "_";
-                combinedTempFile = createTempFile(downloadDir, tempPrefix + "combined", ".mp4");
+                combinedTempFile = Files.createTempFile(downloadDir, tempPrefix + "combined", ".mp4");
 
                 downloadFormat(request.getUrl(), formats.getVideoFormatId(), formats.getVideoUrl(),
-                        combinedTempFile.toString(), cookiesFile, progress, 20, 90);
+                        combinedTempFile.toString(), cookiesFile, progress);
 
                 Files.move(combinedTempFile, finalOutputFile, StandardCopyOption.REPLACE_EXISTING);
 
             } else {
-                // Раздельные форматы
-                log.info("Using SEPARATE formats download");
-
                 String tempPrefix = "temp_" + progress.getDownloadId() + "_";
-
                 String videoExt = determineFileExtension(formats.getVideoFormat(), true);
                 String audioExt = determineFileExtension(formats.getAudioFormat(), false);
 
-                videoTempFile = createTempFile(downloadDir, tempPrefix + "video", videoExt);
-                audioTempFile = createTempFile(downloadDir, tempPrefix + "audio", audioExt);
+                videoTempFile = Files.createTempFile(downloadDir, tempPrefix + "video", videoExt);
+                audioTempFile = Files.createTempFile(downloadDir, tempPrefix + "audio", audioExt);
 
-                // Скачиваем видео
-                progressTrackingService.updateProgress(progress.getDownloadId(), "downloading_video", 30);
+                progressTrackingService.updateStage(progress, "downloading_video", 2);
                 downloadFormat(request.getUrl(), formats.getVideoFormatId(), formats.getVideoUrl(),
-                        videoTempFile.toString(), cookiesFile, progress, 30, 60);
+                        videoTempFile.toString(), cookiesFile, progress);
 
-                // Скачиваем аудио
-                progressTrackingService.updateProgress(progress.getDownloadId(), "downloading_audio", 60);
+                progressTrackingService.updateStage(progress, "downloading_audio", 3);
                 downloadFormat(request.getUrl(), formats.getAudioFormatId(), formats.getAudioUrl(),
-                        audioTempFile.toString(), cookiesFile, progress, 60, 90);
+                        audioTempFile.toString(), cookiesFile, progress);
 
-                // Объединяем через FFmpeg
-                progressTrackingService.updateProgress(progress.getDownloadId(), "merging", 90);
+                progressTrackingService.updateStage(progress, "merging", 4);
                 ffmpegService.mergeWithFfmpeg(videoTempFile.toString(), audioTempFile.toString(),
                         finalOutputFile.toString());
             }
@@ -144,7 +142,6 @@ class DownloadManagementService {
             return finalOutputFile;
 
         } finally {
-            // Очистка временных файлов
             if (formats != null && formats.isCombined()) {
                 tempFileService.cleanupTempFiles(combinedTempFile, cookiesFile);
             } else {
@@ -154,6 +151,8 @@ class DownloadManagementService {
     }
 
     private DownloadResponse completeDownload(DownloadProgress progress, Path finalFile) {
+        progressTrackingService.updateStage(progress, "finalizing", progress.getTotalStages());
+
         progress.setStatus("completed");
         progress.setProgress(100);
         progress.setFilename(finalFile.getFileName().toString());
@@ -169,67 +168,27 @@ class DownloadManagementService {
     private DownloadResponse handleError(String downloadId, DownloadProgress progress, Exception e) {
         log.error("Download failed: {}", e.getMessage(), e);
 
+        String message = e.getMessage() != null ? e.getMessage() : "Download failed";
+
         if (progress != null) {
             progress.setStatus("error");
-            progress.setErrorMessage("Download process error: " + e.getMessage());
+            progress.setErrorMessage(message);
             progress.setEndTime(LocalDateTime.now());
 
             historyService.addToDownloadHistory(progress);
             progressTrackingService.removeProgress(downloadId);
         }
 
-        return new DownloadResponse(false, null, null, "unknown",
-                "Download process error: " + e.getMessage());
-    }
-
-    private void validateFormatAvailability(VideoInfo videoInfo, FormatSelection formats) throws IOException {
-        log.info("Validating format availability...");
-
-        // Проверяем видео формат
-        if (formats.getVideoFormat() != null) {
-            VideoFormatInfo videoFormat = formats.getVideoFormat();
-            if (videoFormat.getUrl() == null || videoFormat.getUrl().trim().isEmpty()) {
-                throw new IOException("Video format " + videoFormat.getFormat_id() + " has no URL");
-            }
-
-            // Проверяем, что формат действительно доступен в списке
-            boolean formatExists = videoInfo.getFormats().stream()
-                    .anyMatch(f -> f.getFormat_id().equals(videoFormat.getFormat_id())
-                            && f.getUrl() != null && !f.getUrl().trim().isEmpty());
-
-            if (!formatExists) {
-                throw new IOException("Video format " + videoFormat.getFormat_id() + " is not available");
-            }
-
-            log.info("Video format {} validated: {}", videoFormat.getFormat_id(), videoFormat.getFormat_note());
-        }
-
-        // Проверяем аудио формат
-        if (formats.getAudioFormat() != null) {
-            VideoFormatInfo audioFormat = formats.getAudioFormat();
-            if (audioFormat.getUrl() == null || audioFormat.getUrl().trim().isEmpty()) {
-                throw new IOException("Audio format " + audioFormat.getFormat_id() + " has no URL");
-            }
-
-            boolean formatExists = videoInfo.getFormats().stream()
-                    .anyMatch(f -> f.getFormat_id().equals(audioFormat.getFormat_id())
-                            && f.getUrl() != null && !f.getUrl().trim().isEmpty());
-
-            if (!formatExists) {
-                throw new IOException("Audio format " + audioFormat.getFormat_id() + " is not available");
-            }
-
-            log.info("Audio format {} validated: {}", audioFormat.getFormat_id(), audioFormat.getFormat_note());
-        }
+        return new DownloadResponse(false, null, null, "unknown", message);
     }
 
     public void downloadFormat(String url, String formatId, String formatUrl, String outputFile,
-                               Path cookiesFile, DownloadProgress progress,
-                               int startProgress, int endProgress) throws IOException, InterruptedException {// ПРОВЕРКА: Если файл уже существует и он пустой, удаляем его
+                               Path cookiesFile, DownloadProgress progress)
+            throws IOException, InterruptedException {
+
         File output = new File(outputFile);
         Path outputFilePath = Paths.get(outputFile);
         if (output.exists() && output.length() == 0) {
-            log.warn("Found empty existing file, deleting: {}", outputFile);
             Files.deleteIfExists(outputFilePath);
         }
 
@@ -239,14 +198,14 @@ class DownloadManagementService {
         command.add("-f");
         command.add(formatId);
         command.add("--no-playlist");
+        command.add("--js-runtimes");
+        command.add("node");
+        command.add("--remote-components");
+        command.add("ejs:github");
         command.add("-o");
         command.add(outputFile);
-
-        // МИНИМАЛЬНЫЙ НАБОР ПАРАМЕТРОВ:
-        command.add("--no-overwrites");   // Не перезаписывать существующие файлы
-        command.add("--continue");        // Продолжать частично скачанные файлы
-
-        // Добавить retry логику
+        command.add("--no-overwrites");
+        command.add("--continue");
         command.add("--retries");
         command.add("10");
 
@@ -255,25 +214,20 @@ class DownloadManagementService {
             command.add(cookiesFile.toString());
         }
 
-        log.info("Download command: {}", String.join(" ", command));
-
         ProcessBuilder processBuilder = new ProcessBuilder(command);
         Process process = processBuilder.start();
+        progress.setProcess(process);
         progressTrackingService.getActiveProcesses().put(progress.getDownloadId(), process);
 
-        // Чтение вывода для прогресса
         Thread progressThread = new Thread(() -> {
             try (BufferedReader reader = new BufferedReader(
                     new InputStreamReader(process.getInputStream(), StandardCharsets.UTF_8))) {
                 String line;
                 while ((line = reader.readLine()) != null) {
-                    log.debug("Download output: {}", line);
                     if (line.contains("[download]")) {
                         int currentProgress = progressTrackingService.parseProgressFromLine(line);
-                        if (currentProgress > 0) {
-                            // Масштабируем прогресс в диапазон [startProgress, endProgress]
-                            int scaledProgress = startProgress + (currentProgress * (endProgress - startProgress)) / 100;
-                            progress.setProgress(Math.min(scaledProgress, endProgress));
+                        if (currentProgress >= 0) {
+                            progress.setProgress(Math.min(currentProgress, 100));
                         }
                     }
                 }
@@ -283,33 +237,65 @@ class DownloadManagementService {
         });
         progressThread.start();
 
-        // ТАКЖЕ читаем stderr для диагностики ошибок
-        Thread errorThread = getErrorThread(process);
+        StringBuilder errorBuffer = new StringBuilder();
+        Thread errorThread = getErrorThread(process, errorBuffer);
 
         int exitCode = process.waitFor();
         progressThread.join();
         errorThread.join();
         progressTrackingService.getActiveProcesses().remove(progress.getDownloadId());
 
-        // ПРОВЕРКА: Убедимся, что файл действительно скачан и не пустой
+        if (exitCode != 0) {
+            String firstError = extractFirstError(errorBuffer.toString());
+            throw new IOException(firstError != null
+                    ? firstError
+                    : "yt-dlp exited with code " + exitCode);
+        }
+
         File downloadedFile = new File(outputFile);
         if (!downloadedFile.exists()) {
             throw new IOException("Downloaded file does not exist: " + outputFile);
         }
-
         if (downloadedFile.length() == 0) {
-            // Файл пустой - удаляем его и бросаем исключение
             Files.deleteIfExists(outputFilePath);
             throw new IOException("Downloaded file is empty (0 bytes): " + outputFile);
         }
+    }
 
-        log.info("Download completed successfully: {} (size: {} bytes)",
-                outputFile, downloadedFile.length());
+    private static Thread getErrorThread(Process process, StringBuilder buffer) {
+        Thread errorThread = new Thread(() -> {
+            try (BufferedReader reader = new BufferedReader(
+                    new InputStreamReader(process.getErrorStream(), StandardCharsets.UTF_8))) {
+                String line;
+                while ((line = reader.readLine()) != null) {
+                    synchronized (buffer) {
+                        buffer.append(line).append('\n');
+                    }
+                    log.warn("yt-dlp: {}", line);
+                }
+            } catch (IOException e) {
+                log.error("Error reading download errors: {}", e.getMessage());
+            }
+        });
+        errorThread.start();
+        return errorThread;
+    }
 
-        if (exitCode != 0) {
-            throw new IOException("Download failed with exit code: " + exitCode);
+    private static String extractFirstError(String stderr) {
+        if (stderr == null || stderr.isBlank()) return null;
+        String[] lines = stderr.split("\\R");
+        for (String line : lines) {
+            String t = line.trim();
+            if (t.startsWith("ERROR:")) {
+                String msg = t.substring("ERROR:".length()).trim();
+                if (!msg.isEmpty()) return msg;
+            }
         }
-
+        for (String line : lines) {
+            String t = line.trim();
+            if (!t.isEmpty()) return t;
+        }
+        return null;
     }
 
     private String determineFileExtension(VideoFormatInfo format, boolean isVideo) {
@@ -317,13 +303,11 @@ class DownloadManagementService {
             return isVideo ? ".mp4" : ".m4a";
         }
 
-        // Используем расширение из информации о формате, если доступно
         String ext = format.getExt();
         if (ext != null && !ext.trim().isEmpty()) {
             return "." + ext;
         }
 
-        // Определяем по кодекам и контейнерам
         if (isVideo) {
             String vcodec = format.getVcodec();
             if (vcodec != null && vcodec.contains("vp9")) {
@@ -334,7 +318,7 @@ class DownloadManagementService {
             String acodec = format.getAcodec();
             if (acodec != null) {
                 if (acodec.contains("opus")) {
-                    return ".webm"; // или ".opus", но FFmpeg лучше работает с .webm для Opus
+                    return ".webm";
                 } else if (acodec.contains("mp4a") || acodec.contains("aac")) {
                     return ".m4a";
                 } else if (acodec.contains("vorbis")) {
@@ -345,7 +329,6 @@ class DownloadManagementService {
         }
     }
 
-    // Метод для возобновления загрузки
     public void resumeDownload(DownloadProgress progress) {
         DownloadRequest request = createRequestFromProgress(progress);
         downloadVideo(request);

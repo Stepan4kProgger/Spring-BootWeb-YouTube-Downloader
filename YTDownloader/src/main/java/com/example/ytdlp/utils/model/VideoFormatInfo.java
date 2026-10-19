@@ -12,7 +12,9 @@ public class VideoFormatInfo {
     private Integer width;
     private String format;
     private String format_note;
-    private Integer abr;
+    private Double abr;
     private String url;
     private String protocol;
+    private String language;
+    private Integer language_preference;
 }
