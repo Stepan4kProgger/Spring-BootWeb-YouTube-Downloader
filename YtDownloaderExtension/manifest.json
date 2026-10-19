@@ -1,10 +1,9 @@
 {
   "manifest_version": 3,
   "name": "YouTube to YT-DLP App",
-  "version": "1.4",
+  "version": "1.5",
   "description": "Send YouTube videos to YT-DLP Spring Boot application with cookies support",
   "permissions": [
-    "activeTab",
     "scripting",
     "storage",
     "cookies",
@@ -33,6 +32,10 @@
   "action": {
     "default_popup": "popup.html",
     "default_title": "YT-DLP Settings"
+  },
+  "options_ui": {
+    "page": "options.html",
+    "open_in_tab": true
   },
   "icons": {
     "16": "icon16.png",
