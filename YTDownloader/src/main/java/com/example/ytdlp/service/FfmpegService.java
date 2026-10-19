@@ -20,17 +20,17 @@ class FfmpegService {
             throws IOException, InterruptedException {
 
         List<String> command = buildMergeCommand(videoFile, audioFile, outputFile, false);
-
         log.info("Merging with FFmpeg (copy streams): {} + {} -> {}", videoFile, audioFile, outputFile);
 
         if (!executeFfmpegCommand(command, "merge (copy)")) {
             log.warn("Direct stream copy failed, trying with explicit mapping...");
-            List<String> explicitCommand = buildMergeCommand(videoFile, audioFile, outputFile, true);
-            executeFfmpegCommand(explicitCommand, "merge (explicit mapping)");
+            executeFfmpegCommand(buildMergeCommand(videoFile, audioFile, outputFile, true),
+                    "merge (explicit mapping)");
         }
     }
 
-    private List<String> buildMergeCommand(String videoFile, String audioFile, String outputFile, boolean explicitMapping) {
+    private List<String> buildMergeCommand(String videoFile, String audioFile,
+                                           String outputFile, boolean explicitMapping) {
         List<String> command = new ArrayList<>(List.of(ffmpegPath, "-i", videoFile, "-i", audioFile));
 
         if (explicitMapping) {

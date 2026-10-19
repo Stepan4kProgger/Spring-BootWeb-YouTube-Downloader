@@ -1,11 +1,9 @@
 package com.example.ytdlp.service;
 
-import com.example.ytdlp.config.ApplicationConfig;
 import com.example.ytdlp.utils.model.DownloadProgress;
 import com.example.ytdlp.utils.model.DownloadRequest;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
-import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Service;
 
 import java.io.IOException;
@@ -14,6 +12,7 @@ import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.Paths;
 import java.time.LocalDateTime;
+import java.util.ArrayList;
 import java.util.Map;
 import java.util.concurrent.TimeUnit;
 
@@ -23,10 +22,7 @@ import java.util.concurrent.TimeUnit;
 public class ProcessControlService {
     private final ProgressTrackingService progressTrackingService;
     private final HistoryService historyService;
-    private final DownloadManagementService downloadManagementService; // для resume
-
-    @Autowired
-    private ApplicationConfig appConfig;
+    private final DownloadManagementService downloadManagementService;
 
     public boolean pauseDownload(String downloadId) {
         DownloadProgress progress = progressTrackingService.getActiveDownloads().get(downloadId);
@@ -35,16 +31,10 @@ public class ProcessControlService {
             try {
                 Process process = progress.getProcess();
                 if (process.isAlive()) {
-                    process.destroyForcibly();
-                    process.waitFor(3, TimeUnit.SECONDS);
+                    killProcessTree(process);
                 }
-
                 progress.setStatus("paused");
-                progress.setPausable(false);
-                progress.setCancellable(true);
-
                 progressTrackingService.getActiveProcesses().remove(downloadId);
-
                 log.info("Download paused: {}", downloadId);
                 return true;
             } catch (Exception e) {
@@ -70,7 +60,6 @@ public class ProcessControlService {
 
     public boolean retryDownload(String downloadId) {
         try {
-            // Ищем загрузку в истории
             DownloadProgress progress = historyService.getDownloadHistory().stream()
                     .filter(p -> downloadId.equals(p.getDownloadId()))
                     .findFirst()
@@ -78,21 +67,13 @@ public class ProcessControlService {
 
             if (progress != null && "error".equals(progress.getStatus())) {
                 String url = progress.getUrl();
-
-                // Удаляем старую запись из истории
                 historyService.getDownloadHistory().removeIf(p -> downloadId.equals(p.getDownloadId()));
                 historyService.saveDownloadHistory();
-
-                // Удаляем частичный файл, если он существует
                 deletePartialFile(progress);
 
-                // Запускаем новую загрузку с той же ссылкой
                 DownloadRequest request = new DownloadRequest();
                 request.setUrl(url);
-                // cookies не передаем, т.к. они не сохраняются в истории
-
                 downloadManagementService.downloadVideo(request);
-
                 log.info("Retried download for URL: {}", url);
                 return true;
             }
@@ -107,32 +88,21 @@ public class ProcessControlService {
         if (progress != null && progress.getProcess() != null &&
                 ("downloading".equals(progress.getStatus()) || "paused".equals(progress.getStatus()))) {
             try {
-                // Останавливаем процесс
                 Process process = progress.getProcess();
                 if (process.isAlive()) {
-                    process.destroyForcibly();
-                    process.waitFor(3, TimeUnit.SECONDS);
+                    killProcessTree(process);
                 }
-
-                // Пытаемся найти и удалить недокачанный файл
                 deletePartialFile(progress);
 
                 progress.setStatus("cancelled");
-                progress.setCancellable(false);
-                progress.setPausable(false);
                 progress.setEndTime(LocalDateTime.now());
                 progress.setErrorMessage("Загрузка отменена пользователем");
 
-                // Удаляем из активных процессов
                 progressTrackingService.getActiveProcesses().remove(downloadId);
-
-                // Сохраняем в историю
                 historyService.addToDownloadHistory(progress);
-
-                // Удаляем из активных загрузок
                 progressTrackingService.getActiveDownloads().remove(downloadId);
 
-                log.info("Download cancelled and partial file deleted: {}", downloadId);
+                log.info("Download cancelled: {}", downloadId);
                 return true;
             } catch (Exception e) {
                 log.error("Error cancelling download: {}", e.getMessage());
@@ -142,10 +112,8 @@ public class ProcessControlService {
     }
 
     public boolean deleteDownloadedFile(String downloadId) {
-        // Ищем в активных загрузках
         DownloadProgress progress = progressTrackingService.getActiveDownloads().get(downloadId);
         if (progress == null) {
-            // Ищем в истории
             progress = historyService.getDownloadHistory().stream()
                     .filter(p -> downloadId.equals(p.getDownloadId()))
                     .findFirst()
@@ -158,14 +126,9 @@ public class ProcessControlService {
             try {
                 Path filePath = Paths.get(progress.getDownloadDirectory(), progress.getFilename());
                 Files.deleteIfExists(filePath);
-
-                // Удаляем из истории
                 historyService.getDownloadHistory().removeIf(p -> downloadId.equals(p.getDownloadId()));
                 historyService.saveDownloadHistory();
-
-                // Удаляем из активных, если там остался
                 progressTrackingService.getActiveDownloads().remove(downloadId);
-
                 log.info("File deleted: {}", filePath);
                 return true;
             } catch (IOException e) {
@@ -183,89 +146,100 @@ public class ProcessControlService {
         log.info("All downloads stopped successfully");
     }
 
-    private void deletePartialFile(DownloadProgress progress) {
-        try {
-            if (progress.getFilename() != null && !progress.getFilename().equals("unknown")) {
-                Path filePath = Paths.get(progress.getDownloadDirectory(), progress.getFilename());
+    private void stopAllProcesses() {
+        ArrayList<Map.Entry<String, Process>> entries =
+                new ArrayList<>(progressTrackingService.getActiveProcesses().entrySet());
 
-                // Пытаемся удалить основной файл
-                Files.deleteIfExists(filePath);
-
-                // Также пытаемся удалить временные файлы yt-dlp (обычно с расширением .part)
-                try (DirectoryStream<Path> stream = Files.newDirectoryStream(
-                        Paths.get(progress.getDownloadDirectory()),
-                        progress.getFilename() + ".*")) {
-
-                    for (Path tempFile : stream) {
-                        if (tempFile.toString().endsWith(".part") ||
-                                tempFile.toString().contains(progress.getFilename() + ".")) {
-                            Files.deleteIfExists(tempFile);
-                            log.info("Deleted partial file: {}", tempFile);
-                        }
-                    }
-                }
-
-                // Дополнительно: удаляем временные файлы по шаблону downloadId
-                String tempPrefix = "temp_" + progress.getDownloadId() + "_";
-                try (DirectoryStream<Path> stream = Files.newDirectoryStream(
-                        Paths.get(progress.getDownloadDirectory()),
-                        tempPrefix + "*")) {
-
-                    for (Path tempFile : stream) {
-                        Files.deleteIfExists(tempFile);
-                        log.info("Deleted temp file: {}", tempFile);
-                    }
-                }
-            }
-        } catch (IOException e) {
-            log.warn("Could not delete partial file for download: {}", progress.getDownloadId(), e);
+        if (entries.isEmpty()) {
+            progressTrackingService.getActiveProcesses().clear();
+            return;
         }
+
+        for (Map.Entry<String, Process> e : entries) {
+            Process p = e.getValue();
+            if (p == null || !p.isAlive()) continue;
+            try { p.descendants().forEach(ProcessHandle::destroy); } catch (Exception ignored) {}
+            try { p.destroy(); } catch (Exception ignored) {}
+        }
+
+        long deadline = System.currentTimeMillis() + 1000L;
+        for (Map.Entry<String, Process> e : entries) {
+            Process p = e.getValue();
+            if (p == null) continue;
+            long remaining = deadline - System.currentTimeMillis();
+            if (remaining <= 0) break;
+            try { p.waitFor(remaining, TimeUnit.MILLISECONDS); } catch (Exception ignored) {}
+        }
+
+        for (Map.Entry<String, Process> e : entries) {
+            Process p = e.getValue();
+            if (p == null || !p.isAlive()) continue;
+            try { p.descendants().forEach(ProcessHandle::destroyForcibly); } catch (Exception ignored) {}
+            try { p.destroyForcibly(); } catch (Exception ignored) {}
+        }
+
+        for (Map.Entry<String, Process> e : entries) {
+            Process p = e.getValue();
+            if (p == null) continue;
+            try { p.waitFor(500, TimeUnit.MILLISECONDS); } catch (Exception ignored) {}
+        }
+
+        progressTrackingService.getActiveProcesses().clear();
     }
 
-    private void stopAllProcesses() {
-        int stoppedCount = 0;
-        for (Map.Entry<String, Process> entry : progressTrackingService.getActiveProcesses().entrySet()) {
-            String downloadId = entry.getKey();
-            Process process = entry.getValue();
+    private void killProcessTree(Process process) {
+        if (process == null) return;
+        try { process.descendants().forEach(ProcessHandle::destroy); } catch (Exception ignored) {}
+        try { process.destroy(); } catch (Exception ignored) {}
 
-            try {
-                if (process != null && process.isAlive()) {
-                    log.info("Stopping process for download: {}", downloadId);
-                    process.destroy();
-                    if (!process.waitFor(3, TimeUnit.SECONDS)) {
-                        forceStopProcess(process);
-                    }
-                    stoppedCount++;
-                }
-            } catch (Exception e) {
-                log.error("Error stopping process for download {}: {}", downloadId, e.getMessage());
-                forceStopProcess(process);
+        try {
+            if (!process.waitFor(2, TimeUnit.SECONDS)) {
+                try { process.descendants().forEach(ProcessHandle::destroyForcibly); } catch (Exception ignored) {}
+                process.destroyForcibly();
+                process.waitFor(1, TimeUnit.SECONDS);
             }
+        } catch (Exception ignored) {
+            try { process.destroyForcibly(); } catch (Exception ignored2) {}
         }
-        progressTrackingService.getActiveProcesses().clear();
-        log.info("Stopped {} processes", stoppedCount);
     }
 
     private void updateActiveDownloadsStatus() {
         for (DownloadProgress progress : progressTrackingService.getActiveDownloads().values()) {
             if ("downloading".equals(progress.getStatus()) || "paused".equals(progress.getStatus())) {
                 progress.setStatus("cancelled");
-                progress.setCancellable(false);
-                progress.setPausable(false);
                 progress.setEndTime(LocalDateTime.now());
                 progress.setErrorMessage("Загрузка прервана при завершении приложения");
-
                 historyService.addToDownloadHistory(progress);
             }
         }
         progressTrackingService.getActiveDownloads().clear();
     }
 
-    private void forceStopProcess(Process process) {
+    private void deletePartialFile(DownloadProgress progress) {
         try {
-            process.destroyForcibly();
-        } catch (Exception e) {
-            log.error("Failed to force destroy process: {}", e.getMessage());
+            if (progress.getFilename() != null && !progress.getFilename().equals("unknown")) {
+                Path filePath = Paths.get(progress.getDownloadDirectory(), progress.getFilename());
+                Files.deleteIfExists(filePath);
+                try (DirectoryStream<Path> stream = Files.newDirectoryStream(
+                        Paths.get(progress.getDownloadDirectory()),
+                        progress.getFilename() + ".*")) {
+                    for (Path tempFile : stream) {
+                        if (tempFile.toString().endsWith(".part") ||
+                                tempFile.toString().contains(progress.getFilename() + ".")) {
+                            Files.deleteIfExists(tempFile);
+                        }
+                    }
+                }
+                String tempPrefix = "temp_" + progress.getDownloadId() + "_";
+                try (DirectoryStream<Path> stream = Files.newDirectoryStream(
+                        Paths.get(progress.getDownloadDirectory()), tempPrefix + "*")) {
+                    for (Path tempFile : stream) {
+                        Files.deleteIfExists(tempFile);
+                    }
+                }
+            }
+        } catch (IOException e) {
+            log.warn("Could not delete partial file for download: {}", progress.getDownloadId(), e);
         }
     }
 }

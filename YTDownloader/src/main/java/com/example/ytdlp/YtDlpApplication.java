@@ -1,35 +1,35 @@
 package com.example.ytdlp;
 
-import com.example.ytdlp.utils.tray.TrayManager;
+import com.example.ytdlp.service.ShutdownService;
+import com.example.ytdlp.ui.MainFrame;
 import org.springframework.boot.SpringApplication;
 import org.springframework.boot.autoconfigure.SpringBootApplication;
 import org.springframework.context.ConfigurableApplicationContext;
 
-import java.io.IOException;
-import java.net.Socket;
+import javax.swing.*;
 
 @SpringBootApplication
 public class YtDlpApplication {
     public static void main(String[] args) {
-        // Отключаем headless режим для поддержки системного трея
         System.setProperty("java.awt.headless", "false");
 
-        // Если порт занят, просто открываем веб-страницу и прекращаем работу
-        try (Socket ignored = new Socket("localhost", 8080)) {
-            TrayManager.openWebInterface();
-            return;
-        } catch (IOException ignored) {}
+        ConfigurableApplicationContext context =
+                SpringApplication.run(YtDlpApplication.class, args);
 
-        // Поднимаем контест запускаемой программы для последующего извлечения бина с треем
-        ConfigurableApplicationContext context = SpringApplication.run(YtDlpApplication.class, args);
+        // Захватываем ссылку до того, как контекст может быть закрыт.
+        ShutdownService shutdownService = context.getBean(ShutdownService.class);
 
-        // Инициализируем системный трей
-        TrayManager trayManager = context.getBean(TrayManager.class);
+        // JVM shutdown hook: срабатывает на System.exit, Ctrl+C, logout, внешний kill.
+        // ShutdownService идемпотентен — повторный вызов безопасен.
+        Runtime.getRuntime().addShutdownHook(new Thread(() -> {
+            try {
+                shutdownService.shutdown();
+            } catch (Exception ignored) {}
+        }, "app-shutdown-hook"));
 
-        // Открываем веб-страницу
-        TrayManager.openWebInterface();
-
-        // Добавляем обработчик завершения приложения
-        Runtime.getRuntime().addShutdownHook(new Thread(trayManager::removeTrayIcon));
+        SwingUtilities.invokeLater(() -> {
+            MainFrame frame = context.getBean(MainFrame.class);
+            frame.setVisible(true);
+        });
     }
 }
