@@ -1,142 +1,43 @@
-# RUS | YouTube Downloader Suite
+# YouTube Downloader Suite
 
-Набор инструментов для удобной загрузки видео с YouTube, VK и других совместимых сайтов с использованием технологии **yt-dlp**. Проект состоит из четырех взаимосвязанных компонентов, обеспечивающих полный цикл работы с видео.
+Набор инструментов для загрузки видео с YouTube и других совместимых сайтов через `yt-dlp`. Проект состоит из четырёх компонентов, каждый из которых находится в отдельной ветке репозитория.
 
-![Java](https://img.shields.io/badge/Java-21-orange?style=for-the-badge&logo=openjdk)
-![Spring Boot](https://img.shields.io/badge/Spring%20Boot-3.5.6-green?style=for-the-badge&logo=springboot)
-![Chromium](https://img.shields.io/badge/Chromium-Extension-blue?style=for-the-badge&logo=googlechrome)
+## Компоненты и ветки
 
-## 🚀 Особенности
+### 1. Application — основное приложение
+**Ветка:** [`Application`](https://github.com/Stepan4kProgger/Spring-BootWeb-YouTube-Downloader/tree/Application)
 
-- **📥 Умная загрузка** - Поддержка всех форматов YouTube через yt-dlp
-- **🔐 Авторизация** - Передача cookies из браузера для доступа к приватному контенту
-- **🌐 Веб-интерфейс** - Удобное управление через браузер
-- **🔄 Автообновление** - Автоматическое обновление yt-dlp
-- **🎯 Интеграция** - Расширение для прямого скачивания с YouTube
-- **📊 Мониторинг** - Отслеживание прогресса загрузки в реальном времени
+Приложение для загрузки видео по URL. Содержит графический интерфейс для управления загрузками (в текущей версии ветки выполнен переход на Swing). Отвечает за приём ссылок, выбор параметров и непосредственную работу с `yt-dlp`.
 
-## 🏗️ Архитектура проекта
+### 2. Extension — расширение для браузера
+**Ветка:** [`Extension`](https://github.com/Stepan4kProgger/Spring-BootWeb-YouTube-Downloader/tree/Extension)
 
-Проект состоит из четырех основных компонентов:
+Интеграция с браузерами на Chromium (Chrome, Opera, Edge и др.). Добавляет элементы управления на страницы YouTube, позволяет передавать ссылки в основное приложение и получать уведомления о статусе загрузки.
 
-### 1. 🎯 **Лаунчер (Launcher)**
-- **Назначение**: Координация запуска всех компонентов
-- **Технологии**: Spring Boot, Java 21
-- **Функции**:
-  - Последовательный запуск компонентов
-  - Проверка зависимостей
-  - Обработка ошибок запуска
+### 3. Updater — обновление yt-dlp
+**Ветка:** [`Updater`](https://github.com/Stepan4kProgger/Spring-BootWeb-YouTube-Downloader/tree/Updater)
 
-### 2. 🔄 **Обновщик (Updater)**
-- **Назначение**: Автоматическое обновление yt-dlp
-- **Функции**:
-  - Проверка новых версий через Google Drive
-  - Скачивание и замена yt-dlp.exe
-  - Резервное копирование предыдущих версий
+Служба обновления `yt-dlp`. Проверяет актуальность версии, скачивает и подменяет исполняемый файл, сохраняет резервные копии предыдущих версий. Обеспечивает стабильную работу загрузчика при изменении поддерживаемых сайтов.
 
-### 3. 🌐 **Основное приложение (YT-DLP Web App)**
-- **Назначение**: Веб-интерфейс для управления загрузками
-- **Технологии**: Spring Boot, Thymeleaf, REST API
-- **Функции**:
-  - Веб-интерфейс для отправки URL
-  - Управление очередью загрузок
-  - Просмотр истории и прогресса
-  - Настройка параметров загрузки
+### 4. Launcher — запуск компонентов
+**Ветка:** [`Launcher`](https://github.com/Stepan4kProgger/Spring-BootWeb-YouTube-Downloader/tree/Launcher)
 
-### 4. 🧩 **Расширение браузера (Browser Extension)**
-- **Назначение**: Интеграция с YouTube для быстрого доступа
-- **Поддержка**: Chrome, Opera, Edge (все Chromium-based браузеры)
-- **Функции**:
-  - Кнопки скачивания прямо на YouTube
-  - Передача cookies авторизации
-  - Уведомления о статусе загрузки
+Связующее звено приложения. Отвечает за корректный запуск остальных компонентов, проверку окружения и обработку ошибок старта. Позволяет использовать набор как единое целое, не запуская каждую часть вручную.
 
-## 📋 Требования
+## Требования
 
-- **Java 21** ([Скачать с Oracle](https://www.oracle.com/java/technologies/javase/jdk21-archive-downloads.html))
-- **Браузер на базе Chromium** (Chrome, Opera, Edge и т.д.)
-- **Доступ к YouTube**
-- **~100 МБ** свободного места на диске
+- Java 21
+- Браузер на базе Chromium (для работы расширения)
+- Около 100 МБ свободного места на диске
 
-## ⭐ Если проект вам понравился, поставьте звезду на GitHub!
+## Быстрый старт
 
-Для вопросов и поддержки создавайте Issues в репозитории проекта.
+1. Установите Java 21.
+2. Клонируйте нужную ветку или весь репозиторий.
+3. Запустите приложение через `Launcher` (или основной модуль `Application`).
+4. Установите расширение из ветки `Extension`.
+5. Начните скачивать видео со страниц YouTube.
 
-# ENG | YouTube Downloader Suite
+## Поддержка
 
-A toolkit for convenient YouTube, VK and other video downloading using **yt-dlp** technology. The project consists of four interconnected components that provide a complete video processing workflow.
-
-![Java](https://img.shields.io/badge/Java-21-orange?style=for-the-badge&logo=openjdk)
-![Spring Boot](https://img.shields.io/badge/Spring%20Boot-4.0-blue?style=for-the-badge&logo=springboot)
-![Chromium](https://img.shields.io/badge/Chromium-Extension-green?style=for-the-badge&logo=googlechrome)
-
-## 🚀 Features
-
-- **📥 Smart Downloading** - Support for all YouTube formats via yt-dlp
-- **🔐 Authorization** - Transfer cookies from browser for accessing private content
-- **🌐 Web Interface** - Convenient browser-based management
-- **🔄 Auto-Update** - Automatic yt-dlp updates
-- **🎯 Integration** - Extension for direct downloading from YouTube
-- **📊 Monitoring** - Real-time download progress tracking
-
-## 🏗️ Project Architecture
-
-The project consists of four main components:
-
-### 1. 🎯 Launcher
-- **Purpose**: Coordinates the launch of all components
-- **Technologies**: Spring Boot, Java 21
-- **Functions**:
-  - Sequential component startup
-  - Dependency checking
-  - Launch error handling
-
-### 2. 🔄 Updater
-- **Purpose**: Automatic yt-dlp updates
-- **Functions**:
-  - Checking for new versions via Google Drive
-  - Downloading and replacing yt-dlp.exe
-  - Backup of previous versions
-
-### 3. 🌐 Main Application (YT-DLP Web App)
-- **Purpose**: Web interface for download management
-- **Technologies**: Spring Boot, Thymeleaf, REST API
-- **Functions**:
-  - Web interface for URL submission
-  - Download queue management
-  - History and progress viewing
-  - Download parameter configuration
-
-### 4. 🧩 Browser Extension
-- **Purpose**: YouTube integration for quick access
-- **Support**: Chrome, Opera, Edge (all Chromium-based browsers)
-- **Functions**:
-  - Download buttons directly on YouTube
-  - Authorization cookie transfer
-  - Download status notifications
-
-## 📋 Requirements
-
-- **Java 21** ([Download from Oracle](https://www.oracle.com/java/technologies/javase/jdk21-archive-downloads.html))
-- **Chromium-based Browser** (Chrome, Opera, Edge, etc.)
-- **Access to YouTube**
-- **~100 MB** free disk space
-
-## 🚀 Quick Start
-
-1. Download and install Java 21
-2. Launch the application
-3. Install the browser extension
-4. Start downloading videos directly from YouTube
-
-## 🔧 Configuration
-
-The application automatically handles:
-- yt-dlp updates
-- Browser cookie synchronization
-- Download queue management
-- Progress tracking
-
-## 🤝 Support
-
-For issues and feature requests, please check the project documentation or create an issue in the project repository.
+Вопросы и предложения — через Issues в репозитории.
